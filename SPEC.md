@@ -1,7 +1,7 @@
 # SPEC.md — VortexPerp: Perpetual Futures Engine (vAMM) on Solana
 
 > **VortexPerp — Capstone project for Solana Fellowship**
-> Stack: Anchor 1.0.x (Rust) · TypeScript · Pyth Pull Oracle · Solana devnet
+> Stack: Anchor 0.32.1 (Rust) · TypeScript (`@coral-xyz/anchor`) · Pyth Pull Oracle · Solana devnet
 > Collateral: Native SOL · Market: SOL/USD (Pyth)
 
 ---
@@ -57,27 +57,27 @@ This is architecturally inspired by **Perpetual Protocol v1** but stripped to th
 
 ### Goals (must ship)
 
-- [x] vAMM state account with `x·y=k` invariant
-- [x] Open long / short positions with leverage
-- [x] Close positions with PnL settlement in SOL
-- [x] SOL collateral vault (PDA-owned)
-- [x] Pyth oracle integration for index price
-- [x] Funding rate computation and lazy settlement
-- [x] On-chain liquidation instruction
-- [x] Off-chain crank bot (funding + liquidation)
-- [x] TypeScript SDK wrapping all instructions
-- [x] Minimal Next.js UI for demo
+- vAMM state account with `x·y=k` invariant
+- Open long / short positions with leverage
+- Close positions with PnL settlement in SOL
+- SOL collateral vault (PDA-owned)
+- Pyth oracle integration for index price
+- Funding rate computation and lazy settlement
+- On-chain liquidation instruction
+- Off-chain crank bot (funding + liquidation)
+- TypeScript SDK wrapping all instructions
+- Minimal Next.js UI for demo
 
 ### Non-Goals (explicitly out of scope)
 
-- [ ] Multiple markets / multi-collateral
-- [ ] Cross-margin (one margin pool across all positions)
-- [ ] Order book or limit orders
-- [ ] Mainnet deployment
-- [ ] DAO governance of parameters
-- [ ] Token incentives / staking
-- [ ] On-chain TWAP (use Pyth EMA instead)
-- [ ] Partial liquidations (always fully liquidate)
+- Multiple markets / multi-collateral
+- Cross-margin (one margin pool across all positions)
+- Order book or limit orders
+- Mainnet deployment
+- DAO governance of parameters
+- Token incentives / staking
+- External matching engine, limit orders, or off-chain order routing
+- Partial liquidations (always fully liquidate)
 
 ---
 
@@ -124,6 +124,10 @@ This is architecturally inspired by **Perpetual Protocol v1** but stripped to th
 > All on-chain values use **fixed-point integers** scaled by `1_000_000` (6 decimal places).
 > Use `u128` for all intermediate multiplications to prevent overflow.
 > All division must use `checked_div`. All multiplication must use `checked_mul`.
+> Prices are stored as scaled quote-per-base values. If both reserves are scaled, price formulas
+> must multiply by `SCALE` before dividing.
+> PnL, equity, and funding deltas are signed values and must use `i128` until converted to
+> lamports for transfer.
 
 ### 4.1 vAMM Invariant
 
@@ -146,7 +150,7 @@ quote_asset_reserve = 20_000_000 * SCALE  (20,000,000 virtual USD)
 ### 4.2 Mark Price
 
 ```
-mark_price = quote_asset_reserve / base_asset_reserve
+mark_price = quote_asset_reserve * SCALE / base_asset_reserve
 ```
 
 ### 4.3 Opening a Long Position
@@ -159,26 +163,29 @@ base_out = base_reserve - k / (quote_reserve + quote_amount)
 new_quote_reserve = quote_reserve + quote_amount
 new_base_reserve  = base_reserve  - base_out
 
-entry_price = quote_amount / base_out
+entry_price = quote_amount * SCALE / base_out
 ```
 
 The trader's **position size** = `base_out` (virtual SOL units).
 
 ### 4.4 Opening a Short Position
 
-Trader inputs `base_amount` (virtual SOL units they want to short).
+Trader inputs SOL margin and leverage. The program converts this into a USD notional
+(`quote_amount`) exactly like a long, then solves for the amount of base that must be added
+to the vAMM so the trader receives that quote notional.
 
 ```
-quote_out = quote_reserve - k / (base_reserve + base_amount)
+require quote_amount < quote_reserve
 
-new_base_reserve  = base_reserve  + base_amount
-new_quote_reserve = quote_reserve - quote_out
+new_quote_reserve = quote_reserve - quote_amount
+new_base_reserve  = k / new_quote_reserve
+base_in           = new_base_reserve - base_reserve
 
-entry_price = quote_out / base_amount
+entry_price = quote_amount * SCALE / base_in
 ```
 
-The trader's **position size** = `base_amount` (virtual SOL units).
-The trader's **notional** = `quote_out` (virtual USD units at entry).
+The trader's **position size** = `base_in` (virtual SOL units).
+The trader's **notional** = `quote_amount` (virtual USD units at entry).
 
 ### 4.5 Closing a Long Position
 
@@ -190,9 +197,9 @@ quote_received = quote_reserve - k / (base_reserve + position_size)
 new_base_reserve  = base_reserve  + position_size
 new_quote_reserve = quote_reserve - quote_received
 
-exit_price = quote_received / position_size
+exit_price = quote_received * SCALE / position_size
 pnl_usd    = quote_received - notional_at_entry   (in scaled USD terms)
-pnl_in_sol = pnl_usd * SCALE / current_index_price (convert to lamports for settlement)
+pnl_lamports = pnl_usd * LAMPORTS_PER_SOL / current_index_price
 ```
 
 ### 4.6 Closing a Short Position
@@ -205,9 +212,9 @@ quote_to_repay = k / (base_reserve - position_size) - quote_reserve
 new_base_reserve  = base_reserve  - position_size
 new_quote_reserve = quote_reserve + quote_to_repay
 
-exit_price = quote_to_repay / position_size
+exit_price = quote_to_repay * SCALE / position_size
 pnl_usd    = notional_at_entry - quote_to_repay   (in scaled USD terms)
-pnl_in_sol = pnl_usd * SCALE / current_index_price (convert to lamports for settlement)
+pnl_lamports = pnl_usd * LAMPORTS_PER_SOL / current_index_price
 ```
 
 > **Note:** For shorts, the trader profits when the cost to "buy back" (`quote_to_repay`) is less than what they originally "sold" for (`notional_at_entry`).
@@ -222,21 +229,40 @@ margin_required = notional / leverage
 // This determines how much quote_amount hits the vAMM.
 ```
 
+On-chain, leverage is only accepted as an integer `u8` in `[1, max_leverage]`. The program
+must compute notional in lamports first, then convert to scaled USD with the oracle price:
+
+```
+notional_lamports = margin_lamports * leverage
+notional_usd      = notional_lamports * index_price / LAMPORTS_PER_SOL
+```
+
 ### 4.8 Liquidation Price
 
-For a **long**:
+For the initial demo estimate, assuming no fees and margin exactly equals `notional / leverage`:
 ```
 liquidation_price = entry_price * (1 - (1/leverage) + maintenance_margin_ratio)
                   = entry_price * (1 - 1/L + 0.0625)
-```
 
-For a **short**:
-```
 liquidation_price = entry_price * (1 + (1/leverage) - maintenance_margin_ratio)
                   = entry_price * (1 + 1/L - 0.0625)
 ```
 
-Compute and store `liquidation_price` at position open. Crank compares mark price against it.
+For on-chain storage, use the actual stored margin after deposits, margin additions, and funding:
+
+```
+margin_usd = margin_lamports * index_price / LAMPORTS_PER_SOL
+maintenance_requirement = position.notional * maintenance_margin_ratio / SCALE
+buffer_usd = margin_usd - maintenance_requirement
+
+long_liquidation_price  = entry_price - buffer_usd * SCALE / position.size
+short_liquidation_price = entry_price + buffer_usd * SCALE / position.size
+```
+
+Clamp long liquidation price to `0` if the buffer is larger than the entry-side loss. Store
+`liquidation_price` as a crank/UI hint, but always recompute `margin_ratio` in `liquidate`.
+If `buffer_usd <= 0`, reject the open/add-margin path unless the operation is part of a
+liquidation or close; the position would already be below maintenance.
 
 ### 4.9 Margin Ratio
 
@@ -246,23 +272,35 @@ Compute and store `liquidation_price` at position open. Crank compares mark pric
 ```
 margin_usd     = margin_lamports * index_price / LAMPORTS_PER_SOL
 unrealised_pnl = compute_pnl(position, current_mark_price)   // in scaled USD
-margin_ratio   = (margin_usd + unrealised_pnl) / position.notional
+equity_usd     = margin_usd + unrealised_pnl
+margin_ratio   = equity_usd * SCALE / position.notional
 
 Position is liquidatable when:
   margin_ratio < maintenance_margin_ratio (0.0625)
 ```
 
+If `equity_usd <= 0`, treat the margin ratio as `0` and the position as liquidatable.
+For liquidation validation, prefer exact close/unwind quote math over a linear mark-price
+approximation when compute budget allows, so slippage is included in the health check.
+
 ### 4.10 Scaling Constants
 
 ```rust
 pub const SCALE: u128         = 1_000_000;        // 6 decimal places
+pub const LAMPORTS_PER_SOL_U128: u128 = 1_000_000_000;
+pub const MIN_MARGIN_LAMPORTS: u64 = 10_000_000;  // 0.01 SOL
 pub const FUNDING_PERIOD: i64 = 3600;             // 1 hour in seconds
 pub const MAINTENANCE_MARGIN: u128 = 62_500;      // 0.0625 * SCALE
 pub const MAX_LEVERAGE: u8    = 10;
 pub const TRADING_FEE_BPS: u64 = 10;             // 0.1% = 10 bps
 pub const LIQUIDATION_FEE_BPS: u64 = 250;        // 2.5% to liquidator
 pub const INSURANCE_FEE_BPS: u64 = 50;           // 0.5% to insurance fund
+pub const MAX_ORACLE_CONFIDENCE_BPS: u64 = 100;  // 1%
+pub const MAX_ORACLE_AGE_SECS: u64 = 60;
 ```
+
+When clamping signed funding rates, convert `funding_rate_cap` to `i128` with checked bounds
+before applying `[-cap, +cap]`.
 
 ---
 
@@ -271,7 +309,7 @@ pub const INSURANCE_FEE_BPS: u64 = 50;           // 0.5% to insurance fund
 ### 5.1 `VammState`
 
 **PDA seeds:** `["vamm_state"]`
-**Size:** ~200 bytes
+**Size:** `8 + VammState::INIT_SPACE` (about 470 bytes with the fields below)
 
 ```rust
 #[account]
@@ -286,7 +324,7 @@ pub struct VammState {
 
     // Price tracking
     pub mark_price: u128,               // 16 — current mark price (scaled)
-    pub mark_price_twap: u128,          // 16 — 1hr TWAP of mark price (used for funding)
+    pub mark_price_twap: u128,          // 16 — recent mark TWAP used for funding
     pub twap_samples: [u128; 8],        // 128 — ring buffer of mark price samples
     pub twap_sample_index: u8,          // 1
     pub twap_sample_count: u8,          // 1 — number of samples collected (max 8)
@@ -299,6 +337,8 @@ pub struct VammState {
     // Accounting
     pub total_long_base: u128,          // 16 — sum of all long position sizes
     pub total_short_base: u128,         // 16 — sum of all short position sizes
+    pub total_margin: u64,              // 8 — active position margin in lamports
+    pub funding_pool: u64,              // 8 — lamports collected from funding payers
     pub fee_pool: u64,                  // 8 — accumulated trading fees (lamports)
     pub open_interest: u128,            // 16 — total open notional (scaled USD)
 
@@ -320,7 +360,7 @@ pub struct VammState {
 ### 5.2 `Position`
 
 **PDA seeds:** `["position", trader.key()]`
-**Size:** ~150 bytes
+**Size:** `8 + Position::INIT_SPACE` (about 180 bytes with the fields below)
 
 ```rust
 #[account]
@@ -341,8 +381,8 @@ pub struct Position {
     pub margin: u64,                    // 8
 
     // Funding tracking
-    pub last_funding_ts: i64,           // 8
-    pub funding_rate_at_open: i128,     // 16 — cumulative rate when opened
+    pub last_funding_ts: i64,           // 8 — last per-position funding settlement timestamp
+    pub last_cumulative_funding_rate: i128, // 16 — last cumulative rate settled for this position
 
     // Metadata
     pub leverage: u8,                   // 1
@@ -360,6 +400,7 @@ pub enum Direction {
 ### 5.3 `InsuranceFund`
 
 **PDA seeds:** `["insurance_fund"]`
+**Size:** `8 + InsuranceFund::INIT_SPACE` (about 57 bytes with the fields below)
 
 ```rust
 #[account]
@@ -370,6 +411,14 @@ pub struct InsuranceFund {
     pub bump: u8,               // 1
 }
 ```
+
+`InsuranceFund.balance` must mirror the lamports held by the account excluding rent-exempt
+reserve. Every payout from or deposit into the insurance fund updates both account lamports
+and this tracked balance.
+
+> **Space sizing:** Prefer `#[derive(InitSpace)]` and `space = 8 + Type::INIT_SPACE` over the
+> rough byte estimates above. If manual sizing is used, include the 8-byte discriminator and
+> Anchor enum discriminants.
 
 ---
 
@@ -400,15 +449,16 @@ system_program
 **Validation:**
 - `base_asset_reserve > 0`
 - `quote_asset_reserve > 0`
+- `base_asset_reserve * quote_asset_reserve` does not overflow `u128`
 - `authority` is signer
-- `pyth_feed_id` is a valid 32-byte feed ID
+- `pyth_feed_id` is not all-zero bytes
 
 **Effects:**
 - Sets `k = base * quote`
-- Sets `mark_price = quote / base`
+- Sets `mark_price = quote * SCALE / base`
 - Sets `last_funding_ts = Clock::get().unix_timestamp`
 - Sets `max_leverage = 10`, `maintenance_margin_bps = 625`, `trading_fee_bps = 10`
-- Sets `funding_rate_cap = 100` (0.01% = ±0.1% max per hour)
+- Sets `funding_rate_cap = 100` (0.01% max per hour)
 - Stores `pyth_feed_id` for subsequent price lookups
 
 ---
@@ -441,32 +491,42 @@ system_program
 - `margin_lamports >= MIN_MARGIN` (e.g. 0.01 SOL = 10_000_000 lamports)
 - `vamm.paused == false`
 - Trader has no existing position (one position per trader per market)
-- Pyth price is not stale (confidence check)
+- Pyth price matches `vamm.pyth_feed_id`, is positive, not stale, and passes confidence check
+- Computed notional and vAMM output are non-zero after scaling
+- For longs, `base_out < vamm.base_asset_reserve` so base reserve cannot be exhausted
+- For shorts, `notional_usd < vamm.quote_asset_reserve` so quote reserve cannot be exhausted
+- Trader has enough SOL to pay `margin_lamports + fee_lamports`
 
 **Execution steps:**
 1. Read `index_price` from Pyth `PriceUpdateV2` (with staleness + confidence check)
-2. Compute `notional_sol = margin_lamports * leverage` (in lamports)
-3. Convert to USD: `notional_usd = notional_sol * index_price / LAMPORTS_PER_SOL`
-4. Run vAMM math: compute `base_out` and new reserves
-5. Compute `entry_price = notional_usd / base_out`
-6. Compute `liquidation_price` (formula in §4.8)
-7. Compute trading fee in lamports: `fee_lamports = margin_lamports * leverage * TRADING_FEE_BPS / 10000`
-8. Verify `margin_lamports > fee_lamports` (margin must cover the fee)
-9. Transfer `margin_lamports` from trader → `collateral_vault` (via system_program CPI)
-10. Record effective margin: `position.margin = margin_lamports - fee_lamports`
-11. Add `fee_lamports` to `vamm.fee_pool`
-12. Update `vamm.base_asset_reserve`, `quote_asset_reserve`
-13. Update `vamm.mark_price`
-14. Update `vamm.total_long_base` or `total_short_base`
-15. Update `vamm.open_interest += notional_usd`
-16. Write `Position` account
+2. Compute `notional_lamports = margin_lamports * leverage`
+3. Convert to USD: `notional_usd = notional_lamports * index_price / LAMPORTS_PER_SOL`
+4. Run direction-specific vAMM math:
+   - Long: treat `notional_usd` as quote added to the pool and compute `base_out`
+   - Short: treat `notional_usd` as quote removed from the pool and compute `base_in`
+5. Set `position.size` to `base_out` for longs or `base_in` for shorts
+6. Compute `entry_price = notional_usd * SCALE / position.size`
+7. Compute trading fee in lamports: `fee_lamports = notional_lamports * TRADING_FEE_BPS / 10000`
+8. Verify `margin_lamports + fee_lamports` does not overflow
+9. Compute `liquidation_price` from `margin_lamports`
+10. Transfer `margin_lamports + fee_lamports` from trader → `collateral_vault` (via system_program CPI)
+11. Store `position.margin = margin_lamports`
+12. Store `position.last_cumulative_funding_rate = vamm.cumulative_funding_rate`
+13. Store `position.last_funding_ts = Clock::get()?.unix_timestamp`
+14. Add `fee_lamports` to `vamm.fee_pool`
+15. Update `vamm.base_asset_reserve`, `quote_asset_reserve`
+16. Update `vamm.mark_price = quote_asset_reserve * SCALE / base_asset_reserve`
+17. Update `vamm.total_long_base` or `total_short_base`
+18. Update `vamm.total_margin += margin_lamports`
+19. Update `vamm.open_interest += notional_usd`
+20. Write `Position` account
 
 **Emits event:**
 ```rust
 emit!(PositionOpened {
     trader: ctx.accounts.trader.key(),
     direction,
-    size: base_out,
+    size: position_size,
     entry_price,
     margin: margin_lamports,
     leverage,
@@ -496,8 +556,14 @@ price_update      [read-only, Account<PriceUpdateV2>]  ← Pyth pull oracle
 system_program
 ```
 
+**Validation:**
+- `position.trader == trader.key()`
+- Pyth price matches `vamm.pyth_feed_id`, is positive, not stale, and passes confidence check
+- Reverse vAMM math does not underflow reserves or produce zero quote/base amounts
+- After closing this position, collateral vault plus any insurance top-up can still cover all other active margin and `vamm.funding_pool`
+
 **Execution steps:**
-1. Settle pending funding (same logic as `settle_funding` but for this one position)
+1. Apply lazy funding settlement for this position
 2. Read `index_price` from Pyth `PriceUpdateV2`
 3. Run reverse vAMM math:
    - For longs: compute `quote_received` by returning `position.size` base to pool
@@ -506,15 +572,21 @@ system_program
    - Long: `pnl_usd = quote_received - position.notional`
    - Short: `pnl_usd = position.notional - quote_to_repay`
 5. Convert PnL to lamports: `pnl_lamports = pnl_usd * LAMPORTS_PER_SOL / index_price`
-6. Compute closing fee in lamports: `closing_fee = position.margin * position.leverage * TRADING_FEE_BPS / 10000`
-7. Compute `payout = position.margin + pnl_lamports - closing_fee`
-8. If `payout > 0`: transfer `payout` from vault → trader
-9. If `payout <= 0` (bad debt): use insurance fund to cover deficit, transfer 0 to trader
-10. Add `closing_fee` to `vamm.fee_pool`
-11. Restore vAMM reserves
-12. Update `total_long_base` or `total_short_base`
-13. Update `vamm.open_interest -= position.notional`
-14. Close `Position` account (rent goes to trader)
+6. Compute closing notional in lamports:
+   - `exit_notional_usd = quote_received` for longs, `quote_to_repay` for shorts
+   - `exit_notional_lamports = exit_notional_usd * LAMPORTS_PER_SOL / index_price`
+7. Compute closing fee in lamports: `closing_fee = exit_notional_lamports * TRADING_FEE_BPS / 10000`
+8. Compute `pre_fee_equity = position.margin + pnl_lamports`
+9. Compute `collected_closing_fee = min(closing_fee, max(pre_fee_equity, 0))`
+10. Compute signed `payout = pre_fee_equity - collected_closing_fee`
+11. If `payout > 0`: transfer `payout` from vault → trader; if the vault would fall below other active margin plus `funding_pool`, transfer the shortfall from insurance fund first and update `insurance_fund.balance`/`total_payouts`
+12. If `payout <= 0`: record `deficit = -payout`, use insurance fund to cover protocol bad debt if required, decrease `insurance_fund.balance`, increase `insurance_fund.total_payouts`, and transfer 0 to trader
+13. Add `collected_closing_fee` to `vamm.fee_pool`
+14. Restore vAMM reserves
+15. Update `total_long_base` or `total_short_base`
+16. Update `vamm.total_margin -= position.margin`
+17. Update `vamm.open_interest -= position.notional`
+18. Close `Position` account (rent goes to trader)
 
 **Emits event:**
 ```rust
@@ -546,15 +618,28 @@ pub fn add_margin(
 **Accounts:**
 ```
 trader            [signer, mut]
+vamm_state        [mut]
 position          [mut, PDA: "position", trader.key()]
 collateral_vault  [mut]
+price_update      [read-only, Account<PriceUpdateV2>]  ← needed to settle funding/recompute risk
 system_program
 ```
 
+**Validation:**
+- `lamports > 0`
+- `position.trader == trader.key()`
+- Pyth price matches `vamm.pyth_feed_id`, is positive, not stale, and passes confidence check
+
 **Execution steps:**
-1. Transfer `lamports` from trader → vault
-2. `position.margin += lamports`
-3. Recompute `liquidation_price` with new margin
+1. Settle pending funding for the position before changing margin
+2. Transfer `lamports` from trader → vault
+3. `position.margin += lamports`
+4. `vamm.total_margin += lamports`
+5. Recompute `liquidation_price` as a UI hint using the updated margin
+
+> **Important:** `liquidation_price` is an optimization/hint for the crank scan. The on-chain
+> `liquidate` instruction must always recompute the full margin ratio and must not rely only
+> on the stored liquidation price.
 
 ---
 
@@ -575,21 +660,24 @@ price_update      [read-only, Account<PriceUpdateV2>]  ← Pyth pull oracle
 
 **Validation:**
 - `Clock::get().unix_timestamp - vamm.last_funding_ts >= FUNDING_PERIOD`
+- Pyth price matches `vamm.pyth_feed_id`, is positive, not stale, and passes confidence check
 
 **Execution steps:**
 1. Read `index_price` from Pyth `PriceUpdateV2`
-2. Compute current spot `mark_price = vamm.quote_reserve / vamm.base_reserve`
+2. Compute current spot `mark_price = vamm.quote_asset_reserve * SCALE / vamm.base_asset_reserve`
 3. Record `mark_price` into TWAP ring buffer: `vamm.twap_samples[vamm.twap_sample_index] = mark_price`
 4. Advance ring buffer: `vamm.twap_sample_index = (vamm.twap_sample_index + 1) % 8`
 5. Update `twap_sample_count = min(twap_sample_count + 1, 8)`
 6. Compute `mark_price_twap = sum(twap_samples[0..twap_sample_count]) / twap_sample_count`
-7. Compute `funding_rate = (mark_price_twap - index_price) / index_price / 24` (per-hour rate)
-8. Clamp: `funding_rate = clamp(funding_rate, -funding_rate_cap, +funding_rate_cap)`
-9. `vamm.cumulative_funding_rate += funding_rate`
-10. Update `vamm.last_funding_ts`
-11. Update `vamm.mark_price_twap`
+7. Compute signed `premium = (mark_price_twap - index_price) * SCALE / index_price`
+8. Compute `funding_rate = premium / 24` (per-hour rate, signed scaled value)
+9. Clamp: `funding_rate = clamp(funding_rate, -funding_rate_cap, +funding_rate_cap)`
+10. `vamm.cumulative_funding_rate += funding_rate`
+11. Update `vamm.last_funding_ts`
+12. Update `vamm.mark_price_twap`
 
-Note: Individual position funding is settled **lazily** in `close_position` and `liquidate`. No per-position loop needed.
+Note: Individual position funding is settled **lazily** when a position is touched by
+`add_margin`, `close_position`, or `liquidate`. No per-position loop needed.
 
 **Emits event:**
 ```rust
@@ -602,16 +690,29 @@ emit!(FundingSettled {
 });
 ```
 
-**Lazy funding settlement formula (applied on close/liquidate):**
+**Lazy funding settlement formula (applied on add_margin/close/liquidate):**
 ```
-funding_delta = cumulative_rate_now - position.funding_rate_at_open
-funding_payment = position.size * funding_delta / SCALE
+funding_delta = cumulative_rate_now - position.last_cumulative_funding_rate
+base_value_usd = position.size * index_price / SCALE
+funding_payment_usd = base_value_usd * funding_delta / SCALE
 
-Convert to lamports: funding_lamports = funding_payment * LAMPORTS_PER_SOL / index_price
+Convert to lamports: funding_lamports = funding_payment_usd * LAMPORTS_PER_SOL / index_price
 
-if direction == Long:   position.margin -= funding_lamports  (longs pay when mark > index)
-if direction == Short:  position.margin += funding_lamports  (shorts receive)
+if funding_lamports > 0 and direction == Long:  debit margin, credit funding_pool
+if funding_lamports > 0 and direction == Short: debit funding_pool, credit margin
+if funding_lamports < 0 and direction == Long:  debit funding_pool, credit margin
+if funding_lamports < 0 and direction == Short: debit margin, credit funding_pool
+
+position.last_cumulative_funding_rate = cumulative_rate_now
+position.last_funding_ts = current_timestamp
 ```
+
+Funding is settled against `vamm.funding_pool` to avoid minting margin during lazy settlement.
+When a position pays funding, the paid lamports move from `position.margin` into
+`vamm.funding_pool`. When a position receives funding, the credited lamports come from
+`vamm.funding_pool`. If the pool cannot fully pay a receiver, credit only the available
+amount in this MVP and still advance `last_cumulative_funding_rate`; unpaid funding is not
+carried forward.
 
 ---
 
@@ -640,29 +741,40 @@ system_program
 
 **Validation:**
 - Fetch `index_price` from Pyth `PriceUpdateV2`
+- Pyth price matches `vamm.pyth_feed_id`, is positive, not stale, and passes confidence check
 - Require `liquidator.key() != position.trader` (no self-liquidation)
-- Compute current `margin_ratio`:
+- Settle pending funding, then compute current `margin_ratio`:
   ```
   unrealised_pnl = compute_pnl(position, current_mark_price)  // in scaled USD
   margin_usd     = position.margin * index_price / LAMPORTS_PER_SOL  // convert lamports → USD
-  margin_ratio   = (margin_usd + unrealised_pnl) / position.notional
+  equity_usd     = margin_usd + unrealised_pnl
+  margin_ratio   = equity_usd <= 0 ? 0 : equity_usd * SCALE / position.notional
   ```
-- Require `margin_ratio < vamm.maintenance_margin_bps / 10000`
+- Require `margin_ratio < vamm.maintenance_margin_bps * SCALE / 10_000`
 
 **Execution steps:**
 1. Settle pending funding for the position
-2. Unwind position on vAMM (reverse math)
-3. Compute `remaining = position.margin + pnl_lamports`
-4. If `remaining >= 0`:
+2. Recompute margin ratio after funding and require it is below maintenance
+3. Unwind position on vAMM (reverse math)
+4. Compute signed `remaining = position.margin + pnl_lamports`
+5. If `remaining > 0`:
    - `liquidation_fee = remaining * LIQUIDATION_FEE_BPS / 10000`
-   - Transfer `liquidation_fee` → liquidator
-   - Transfer `remaining - liquidation_fee` → insurance fund
-5. If `remaining < 0` (bad debt):
+   - `insurance_cut = remaining * INSURANCE_FEE_BPS / 10000`
+   - `trader_refund = remaining - liquidation_fee - insurance_cut`
+   - Transfer `liquidation_fee` from vault → liquidator
+   - Transfer `insurance_cut` from vault → insurance fund
+   - Increase `insurance_fund.balance` by `insurance_cut`
+   - Transfer `trader_refund` from vault → trader
+6. If `remaining <= 0` (bad debt):
    - Pull `|remaining|` from insurance fund
-   - Transfer `0` to liquidator (or small flat fee if fund has balance)
-6. Restore vAMM reserves
-7. Update `vamm.open_interest -= position.notional`
-8. Close `Position` account
+   - Decrease `insurance_fund.balance` by the amount pulled
+   - Increase `insurance_fund.total_payouts` by the amount pulled
+   - Transfer `0` to liquidator
+7. Restore vAMM reserves
+8. Update `total_long_base` or `total_short_base`
+9. Update `vamm.total_margin -= position.margin`
+10. Update `vamm.open_interest -= position.notional`
+11. Close `Position` account
 
 **Emits event:**
 ```rust
@@ -696,11 +808,20 @@ pub fn update_vamm(
 ```
 authority   [signer] — must match vamm.authority
 vamm_state  [mut]
+price_update [read-only, Account<PriceUpdateV2>]
 ```
 
 **Validation:**
 - Only `vamm.authority` can call
+- `vamm.open_interest == 0` (do not re-peg reserves while positions are open)
+- New reserves are non-zero and `new_base_reserve * new_quote_reserve` does not overflow
+- Pyth price matches `vamm.pyth_feed_id`, is positive, not stale, and passes confidence check
 - New reserves maintain a sensible price (within 20% of oracle)
+
+**Effects:**
+- Sets reserves to the supplied values
+- Sets `k = new_base_reserve * new_quote_reserve`
+- Sets `mark_price = new_quote_reserve * SCALE / new_base_reserve`
 
 ---
 
@@ -736,6 +857,7 @@ system_program
 **Validation:**
 - Only `vamm.authority` can call
 - `lamports <= vamm.fee_pool`
+- `collateral_vault.lamports >= vamm.total_margin + vamm.funding_pool + lamports` so active margin and pending funding reserves remain covered
 
 **Execution steps:**
 1. Transfer `lamports` from vault → authority
@@ -757,8 +879,8 @@ pub enum PerpError {
     #[msg("Margin too small")]
     MarginTooSmall,
 
-    #[msg("Margin does not cover trading fee")]
-    MarginDoesNotCoverFee,
+    #[msg("Margin plus trading fee exceeds available balance")]
+    InsufficientBalanceForFee,
 
     #[msg("Trader already has an open position")]
     PositionAlreadyOpen,
@@ -775,6 +897,9 @@ pub enum PerpError {
     #[msg("Pyth price is stale or invalid")]
     StalePythPrice,
 
+    #[msg("Oracle price must be positive")]
+    InvalidOraclePrice,
+
     #[msg("Pyth confidence too wide")]
     PythConfidenceTooWide,
 
@@ -783,6 +908,9 @@ pub enum PerpError {
 
     #[msg("Insufficient insurance fund balance")]
     InsufficientInsuranceFund,
+
+    #[msg("Insufficient collateral vault balance")]
+    InsufficientCollateralVault,
 
     #[msg("Invalid oracle account")]
     InvalidOracle,
@@ -798,6 +926,15 @@ pub enum PerpError {
 
     #[msg("New reserves deviate too far from oracle price")]
     ReservePriceDeviation,
+
+    #[msg("Trade amount must be greater than zero")]
+    InvalidAmount,
+
+    #[msg("Trade would exhaust vAMM reserves")]
+    ReserveExhaustion,
+
+    #[msg("Position equity is zero or negative")]
+    NegativeEquity,
 }
 ```
 
@@ -833,6 +970,17 @@ export class PerpSDK {
   async closePosition(): Promise<TransactionSignature>
 
   async addMargin(solAmount: number): Promise<TransactionSignature>
+
+  async settleFunding(): Promise<TransactionSignature>
+  async liquidate(trader: PublicKey): Promise<TransactionSignature>
+
+  // Admin transactions
+  async togglePause(): Promise<TransactionSignature>
+  async updateVamm(
+    newBaseReserve: bigint,
+    newQuoteReserve: bigint
+  ): Promise<TransactionSignature>
+  async withdrawFees(lamports: bigint): Promise<TransactionSignature>
 
   // PDA helpers
   getVammStatePDA(): [PublicKey, number]
@@ -900,22 +1048,25 @@ class CrankBot {
 
 **Reading the price in Anchor:**
 ```rust
-use pyth_solana_receiver_sdk::price_update::{PriceUpdateV2, get_feed_id_from_hex};
+use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 
-pub const SOL_USD_FEED_ID: &str = "ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d";
 pub const MAX_PRICE_AGE_SECS: u64 = 60;
 
-pub fn read_pyth_price(price_update: &Account<PriceUpdateV2>) -> Result<u128> {
-    let feed_id = get_feed_id_from_hex(SOL_USD_FEED_ID)
-        .map_err(|_| PerpError::InvalidFeedId)?;
-
+pub fn read_pyth_price(
+    price_update: &Account<PriceUpdateV2>,
+    feed_id: &[u8; 32],
+) -> Result<u128> {
     let price = price_update
         .get_price_no_older_than(
             &Clock::get()?,
             MAX_PRICE_AGE_SECS,
-            &feed_id,
+            feed_id,
         )
         .map_err(|_| PerpError::StalePythPrice)?;
+
+    if price.price <= 0 {
+        return Err(PerpError::InvalidOraclePrice.into());
+    }
 
     // Reject if confidence > 1% of price
     if price.conf > (price.price.unsigned_abs() / 100) {
@@ -934,15 +1085,26 @@ fn normalize_pyth_price(price: i64, expo: i32) -> Result<u128> {
     let target_expo: i32 = -6;
     let diff = expo - target_expo;  // typically -2
     let price_u = price.unsigned_abs() as u128;
-    if diff < 0 {
-        price_u.checked_div(10u128.pow((-diff) as u32))
-            .ok_or(PerpError::MathOverflow.into())
+
+    let factor = 10u128
+        .checked_pow(diff.unsigned_abs())
+        .ok_or(PerpError::MathOverflow)?;
+
+    let normalized = if diff < 0 {
+        price_u.checked_div(factor)
+            .ok_or(PerpError::MathOverflow)?
     } else {
-        price_u.checked_mul(10u128.pow(diff as u32))
-            .ok_or(PerpError::MathOverflow.into())
-    }
+        price_u.checked_mul(factor)
+            .ok_or(PerpError::MathOverflow)?
+    };
+
+    require!(normalized > 0, PerpError::InvalidOraclePrice);
+    Ok(normalized)
 }
 ```
+
+Reject normalization if the exponent delta is too large to compute safely or if normalization
+would round the price to zero.
 
 **Client-side: Posting Pyth price updates (TypeScript):**
 ```typescript
@@ -966,7 +1128,7 @@ async function getPriceUpdateInstruction(
 **Dependencies in `Cargo.toml`:**
 ```toml
 [dependencies]
-anchor-lang = { version = "1.0.2", features = ["init-if-needed"] }
+anchor-lang = { version = "0.32.1", features = ["init-if-needed"] }
 pyth-solana-receiver-sdk = "1.2.0"
 ```
 
@@ -978,9 +1140,13 @@ pyth-solana-receiver-sdk = "1.2.0"
 {
   "@pythnetwork/pyth-solana-receiver": "^0.11.0",
   "@pythnetwork/hermes-client": "^1.4.0",
-  "@coral-xyz/anchor": "^0.30.1"
+  "@coral-xyz/anchor": "^0.32.1"
 }
 ```
+
+> **Version note:** Anchor 1.0 uses the renamed `@anchor-lang/core` TypeScript package, but
+> the current Pyth Solana receiver SDK line depends on Anchor 0.32.1. Keep the project on
+> Anchor 0.32.1 unless the Pyth SDK version is upgraded and verified against Anchor 1.x.
 
 ---
 
@@ -990,7 +1156,8 @@ Funding keeps the perp mark price anchored to the Pyth index price.
 
 **Rate formula (per hour):**
 ```
-funding_rate = (mark_price_twap - index_price) / index_price / 24
+premium      = (mark_price_twap - index_price) * SCALE / index_price
+funding_rate = premium / 24
 
 // Divide by 24 to express as per-hour rate (funding settles 24x per day)
 // mark_price_twap is computed from the ring buffer in VammState (§6.5)
@@ -1007,42 +1174,50 @@ funding_rate = (mark_price_twap - index_price) / index_price / 24
 hour to prevent extreme swings during high volatility. At 24 funding periods per day, the
 maximum daily funding is ±0.24%.
 
-**Lazy settlement on close/liquidate:**
+**Lazy settlement on add_margin/close/liquidate:**
 ```rust
 let funding_delta = vamm.cumulative_funding_rate
-    .checked_sub(position.funding_rate_at_open)
+    .checked_sub(position.last_cumulative_funding_rate)
     .ok_or(PerpError::MathOverflow)?;
 
-// funding_payment is in scaled USD terms
-let funding_payment = (position.size as i128)
+let index_price = read_pyth_price(&price_update, &vamm.pyth_feed_id)?;
+
+// Convert base size to scaled USD value, then apply the signed scaled funding rate.
+let base_value_usd = (position.size as i128)
+    .checked_mul(index_price as i128)
+    .ok_or(PerpError::MathOverflow)?
+    / SCALE as i128;
+
+let funding_payment_usd = base_value_usd
     .checked_mul(funding_delta)
     .ok_or(PerpError::MathOverflow)?
     / SCALE as i128;
 
-// Convert to lamports for margin adjustment
-let index_price = read_pyth_price(&price_update)?;
-let funding_lamports = funding_payment
+// Positive funding_lamports means longs pay shorts. Negative means shorts pay longs.
+let funding_lamports = funding_payment_usd
     .checked_mul(LAMPORTS_PER_SOL as i128)
     .ok_or(PerpError::MathOverflow)?
     / index_price as i128;
 
-match position.direction {
-    Direction::Long  => {
-        position.margin = position.margin
-            .checked_sub(funding_lamports.unsigned_abs() as u64)
-            .unwrap_or(0);  // floor at 0 — may trigger liquidation
-    }
-    Direction::Short => {
-        position.margin = position.margin
-            .checked_add(funding_lamports.unsigned_abs() as u64)
-            .ok_or(PerpError::MathOverflow)?;
-    }
-}
+let signed_margin_delta = match position.direction {
+    Direction::Long => funding_lamports.checked_neg().ok_or(PerpError::MathOverflow)?,
+    Direction::Short => funding_lamports,
+};
+
+apply_funding_delta(
+    &mut position.margin,
+    &mut vamm.total_margin,
+    &mut vamm.funding_pool,
+    signed_margin_delta,
+)?;
+position.last_cumulative_funding_rate = vamm.cumulative_funding_rate;
+position.last_funding_ts = Clock::get()?.unix_timestamp;
 ```
 
-> **Safety:** The previous version used unsafe `as i64` / `as u64` casts that could silently
-> overflow. The corrected version uses `checked_sub`/`checked_add` with proper underflow
-> handling. If a long's margin goes to 0 from funding, the position becomes liquidatable.
+`apply_funding_delta` keeps funding solvent. Negative deltas debit the position up to its
+available margin and credit `vamm.funding_pool`; positive deltas debit `vamm.funding_pool`
+up to its available balance and credit the position. `vamm.total_margin` changes by the same
+amount as `position.margin`. A position whose margin reaches zero becomes liquidatable.
 
 ---
 
@@ -1053,7 +1228,8 @@ match position.direction {
 ```
 unrealised_pnl = f(position, current_mark_price)   // see §4.5/4.6, in scaled USD
 margin_usd     = position.margin * index_price / LAMPORTS_PER_SOL  // lamports → USD
-margin_ratio   = (margin_usd + unrealised_pnl) / position.notional
+equity_usd     = margin_usd + unrealised_pnl
+margin_ratio   = equity_usd <= 0 ? 0 : equity_usd * SCALE / position.notional
 ```
 
 > **Units note:** `position.margin` is in lamports (real SOL), while `position.notional` and
@@ -1080,7 +1256,7 @@ Case A — remaining >= 0 (solvent liquidation):
 
 Case B — remaining < 0 (bad debt):
   deficit covered by insurance fund
-  liquidator receives flat 0.005 SOL consolation fee (if fund allows)
+  liquidator receives no fee in the MVP bad-debt path
 ```
 
 ### Crank Liquidation Scan
@@ -1123,12 +1299,16 @@ async scanAndLiquidate() {
 | Liquidation fee | 2.50% of remaining margin | Liquidator (crank) |
 | Insurance cut on liquidation | 0.50% of remaining margin | Insurance fund |
 | Bad debt coverage | Up to fund balance | From insurance fund |
+| Funding payments | Capped by available funding pool | Between position margin and `VammState.funding_pool` |
 
 Fee pool accumulates in `VammState.fee_pool` (tracked in lamports). Admin can withdraw via the `withdraw_fees` instruction (§6.9).
 
 > **Fee units:** All fees are computed and stored in **lamports** (real SOL). The trading fee
-> is calculated as a percentage of the notional exposure in SOL terms:
-> `fee_lamports = margin_lamports * leverage * TRADING_FEE_BPS / 10000`
+> is calculated as a percentage of the notional exposure in SOL terms. Opening fees are paid
+> in addition to posted margin:
+> `open_fee_lamports = margin_lamports * leverage * TRADING_FEE_BPS / 10000`.
+> Closing fees use exit notional:
+> `close_fee_lamports = exit_notional_usd * LAMPORTS_PER_SOL / index_price * TRADING_FEE_BPS / 10000`.
 
 ---
 
@@ -1137,10 +1317,13 @@ Fee pool accumulates in `VammState.fee_pool` (tracked in lamports). Admin can wi
 | Constraint | Implementation |
 |---|---|
 | Signer checks | Every mutating instruction requires `trader` or `authority` as signer |
-| PDA ownership | All PDAs owned by the program — no arbitrary account passing |
+| PDA validation | PDA seeds and bumps enforced; collateral vault may be system-owned but must be at the expected PDA |
 | Oracle staleness | Reject Pyth prices older than 60 seconds |
 | Oracle confidence | Reject if confidence interval > 1% of price |
+| Oracle sign | Reject zero or negative oracle prices |
 | Overflow protection | `checked_mul`, `checked_div`, `checked_add` everywhere |
+| Reserve safety | Reject zero-size trades and trades that exhaust base/quote reserves |
+| Vault solvency | Track `total_margin` and `funding_pool`; prevent fee withdrawals that would uncover either reserve |
 | One position per trader | Check in `open_position` via PDA uniqueness |
 | Max leverage cap | Enforced on-chain in `open_position` |
 | Pause mechanism | `vamm.paused` blocks all opens; closes always available |
@@ -1148,6 +1331,8 @@ Fee pool accumulates in `VammState.fee_pool` (tracked in lamports). Admin can wi
 | No self-liquidation | `liquidator != position.trader` check in `liquidate` |
 | Pyth pull oracle | Price updates must be included in every price-reading tx |
 | Feed ID validation | On-chain feed ID checked against stored `pyth_feed_id` |
+| Pyth receiver ownership | Use `Account<'info, PriceUpdateV2>` so Anchor checks the receiver account owner |
+| Pyth verification level | Use `get_price_no_older_than` for full verification unless a stricter custom policy is specified |
 
 ---
 
@@ -1160,7 +1345,10 @@ Fee pool accumulates in `VammState.fee_pool` (tracked in lamports). Admin can wi
 | `CollateralVault` | `["collateral_vault"]` | Holds SOL lamports |
 | `InsuranceFund` | `["insurance_fund"]` | Holds SOL lamports |
 
-All PDAs use the program ID as the owner. Bump seeds stored in each account.
+All PDA addresses are derived with this program ID. `VammState`, `Position`, and
+`InsuranceFund` are program-owned data accounts. `CollateralVault` is a zero-data
+system account at a PDA address; transfers out of it must use PDA signer seeds.
+Bump seeds are stored in each program-owned account and derived consistently in the client.
 
 ---
 
@@ -1179,9 +1367,14 @@ vamm_math.test.ts
   ✓ liquidation price: correct for 5x short
   ✓ funding rate: positive when mark > index
   ✓ funding rate: negative when mark < index
+  ✓ funding payment: negative funding makes longs receive and shorts pay
   ✓ margin ratio: falls as price moves against position
   ✓ overflow: handles large u128 multiplications correctly
   ✓ scaling: SCALE factor consistent across all functions
+  ✓ scaling: mark and entry prices include SCALE multiplier
+  ✓ edge: zero-size output is rejected
+  ✓ edge: short cannot exhaust quote reserve
+  ✓ edge: negative equity returns margin ratio 0
 ```
 
 ### Integration Tests (Anchor / Bankrun)
@@ -1202,29 +1395,51 @@ perp.test.ts
     ✓ rejects margin below minimum
     ✓ rejects if position already open
     ✓ rejects when vAMM paused
+    ✓ rejects stale, negative, or wide-confidence oracle prices
+    ✓ rejects zero-size trades after fixed-point rounding
+    ✓ rejects trades that would exhaust vAMM reserves
+    ✓ collects opening fee in addition to margin
 
   close_position
     ✓ long profitable: trader receives margin + pnl
     ✓ long loss: trader receives margin - loss
     ✓ short profitable: trader receives margin + pnl
+    ✓ charges close fee based on exit notional
+    ✓ does not add uncollected close fees to fee_pool
+    ✓ insurance fund covers vault shortfall when payout exceeds vault balance
     ✓ restores vAMM reserves after close
     ✓ closes position account (rent returned)
 
   add_margin
     ✓ increases position.margin
+    ✓ settles pending funding before increasing margin
     ✓ updates liquidation_price
+    ✓ rejects zero lamport add_margin
 
   settle_funding
     ✓ updates cumulative_funding_rate
     ✓ rejects if called too soon
     ✓ permissionless (any signer)
+    ✓ clamps positive and negative funding to funding_rate_cap
+    ✓ updates TWAP ring buffer index and count
+    ✓ funding debits increase funding_pool
+    ✓ funding credits are capped by available funding_pool
 
   liquidate
     ✓ succeeds when margin_ratio < threshold
     ✓ rejects when position is healthy
+    ✓ rejects self-liquidation
     ✓ pays liquidation fee to crank
+    ✓ pays insurance cut and trader refund for solvent liquidation
     ✓ covers bad debt from insurance fund
+    ✓ increments insurance_fund.total_payouts on bad debt
+    ✓ handles zero/negative equity without unsigned underflow
     ✓ closes position account
+
+  admin
+    ✓ update_vamm rejects when open_interest > 0
+    ✓ update_vamm rejects reserves more than 20% away from oracle
+    ✓ withdraw_fees cannot reduce vault below total_margin + funding_pool
 ```
 
 ### Devnet Manual Test Scenarios
@@ -1273,7 +1488,7 @@ Scenario 4 — Bad debt
 - Deploy to localnet: `anchor test`
 
 ### Day 3 — Pyth + `close_position` + `add_margin`
-- Add `pyth-sdk-solana` dependency
+- Add `pyth-solana-receiver-sdk` dependency
 - Integrate Pyth price reading with staleness and confidence checks
 - Implement `close_position` with full PnL settlement
 - Implement `add_margin`
@@ -1393,9 +1608,11 @@ vortex-perp/
 | No position size limits | Open interest caps to prevent vAMM price manipulation |
 | k is static | Dynamic k adjustment tied to open interest (like dYdX) |
 | No partial close | Allow closing a fraction of position size |
+| Funding receivers capped by funding_pool | Track unpaid funding credits or settle funding globally with indexed positions |
 | Pyth pull oracle adds tx size | Optimize by batching price updates across instructions |
+| Anchor pinned to 0.32.1 | Upgrade to Anchor 1.x only after Pyth receiver SDK compatibility is verified |
 
 ---
 
 *Generated for Solana Fellowship Capstone — VortexPerp: vAMM Perpetual Futures Engine*
-*Target: Solana devnet · Anchor 1.0.x · Pyth pull oracle (devnet)*
+*Target: Solana devnet · Anchor 0.32.1 · Pyth pull oracle (devnet)*
