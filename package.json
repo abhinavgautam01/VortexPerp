@@ -1,0 +1,36 @@
+{
+  "name": "vortex-perp-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.29.1",
+  "scripts": {
+    "check:rust": "cargo check",
+    "build:program": "anchor build",
+    "test:math": "vitest run math",
+    "test": "pnpm test:math",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "app:dev": "pnpm --filter @vortex-perp/app dev",
+    "app:build": "pnpm --filter @vortex-perp/app build",
+    "crank": "tsx crank/src/index.ts"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "0.31.1",
+    "@pythnetwork/hermes-client": "^1.4.0",
+    "@pythnetwork/pyth-solana-receiver": "^0.11.0",
+    "@solana/web3.js": "^1.98.4",
+    "bn.js": "^5.2.2"
+  },
+  "devDependencies": {
+    "@types/bn.js": "^5.2.0",
+    "@types/node": "^22.15.29",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  },
+  "pnpm": {
+    "overrides": {
+      "@solana/web3.js": "^1.98.4"
+    }
+  }
+}

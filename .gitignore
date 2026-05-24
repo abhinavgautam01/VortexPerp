@@ -1,0 +1,90 @@
+# ========================
+# Anchor / Solana
+# ========================
+.anchor/
+target/
+test-ledger/
+.deploy/
+*.so
+*.bpf
+
+# ========================
+# Rust
+# ========================
+Cargo.lock
+**/*.rs.bk
+
+# ========================
+# Node / TypeScript
+# ========================
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+dist/
+build/
+*.tsbuildinfo
+.turbo/
+
+# ========================
+# Next.js (app/)
+# ========================
+.next/
+out/
+
+# ========================
+# Environment & Secrets
+# ========================
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+keypair.json
+*-keypair.json
+wallet.json
+id.json
+
+# ========================
+# IDE / Editors
+# ========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+
+# ========================
+# OS Files
+# ========================
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.lnk
+
+# ========================
+# Logs & Debug
+# ========================
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ========================
+# Testing / Coverage
+# ========================
+coverage/
+.nyc_output/
+lcov.info
+
+# ========================
+# Misc
+# ========================
+.cache/
+tmp/
+.temp/
+*.bak
+*.orig

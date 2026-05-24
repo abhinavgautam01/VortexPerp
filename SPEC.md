@@ -1,7 +1,7 @@
 # SPEC.md — VortexPerp: Perpetual Futures Engine (vAMM) on Solana
 
 > **VortexPerp — Capstone project for Solana Fellowship**
-> Stack: Anchor 0.32.1 (Rust) · TypeScript (`@coral-xyz/anchor`) · Pyth Pull Oracle · Solana devnet
+> Stack: Anchor 0.31.1 (Rust) · TypeScript (`@coral-xyz/anchor`) · Pyth Pull Oracle · Solana devnet
 > Collateral: Native SOL · Market: SOL/USD (Pyth)
 
 ---
@@ -441,7 +441,7 @@ pub fn initialize(
 ```
 authority         [signer, mut]
 vamm_state        [init, PDA: "vamm_state"]
-collateral_vault  [init, PDA: "collateral_vault"]  ← system account, holds SOL
+collateral_vault  [init, PDA: "collateral_vault"]  ← zero-data program-owned account, holds SOL
 insurance_fund    [init, PDA: "insurance_fund"]
 system_program
 ```
@@ -1128,25 +1128,26 @@ async function getPriceUpdateInstruction(
 **Dependencies in `Cargo.toml`:**
 ```toml
 [dependencies]
-anchor-lang = { version = "0.32.1", features = ["init-if-needed"] }
-pyth-solana-receiver-sdk = "1.2.0"
+anchor-lang = { version = "0.31.1", features = ["init-if-needed"] }
+pyth-solana-receiver-sdk = "=1.0.0"
 ```
 
 > **Note:** `anchor-spl` is **not required** since this project only uses native SOL
-> as collateral (no SPL tokens). Native SOL transfers use `system_program::transfer` CPI.
+> as collateral (no SPL tokens). User deposits use `system_program::transfer` CPI; outbound
+> payments debit lamports from the program-owned vault PDA.
 
 **npm dependencies for client:**
 ```json
 {
   "@pythnetwork/pyth-solana-receiver": "^0.11.0",
   "@pythnetwork/hermes-client": "^1.4.0",
-  "@coral-xyz/anchor": "^0.32.1"
+  "@coral-xyz/anchor": "0.31.1"
 }
 ```
 
-> **Version note:** Anchor 1.0 uses the renamed `@anchor-lang/core` TypeScript package, but
-> the current Pyth Solana receiver SDK line depends on Anchor 0.32.1. Keep the project on
-> Anchor 0.32.1 unless the Pyth SDK version is upgraded and verified against Anchor 1.x.
+> **Version note:** The verified local build uses Anchor CLI/crates `0.31.1` with
+> `pyth-solana-receiver-sdk = "=1.0.0"`. Keep the Pyth version exact; allowing Cargo to float
+> to `1.2.0` can resolve incompatible Anchor/Borsh versions in this toolchain.
 
 ---
 
@@ -1317,7 +1318,7 @@ Fee pool accumulates in `VammState.fee_pool` (tracked in lamports). Admin can wi
 | Constraint | Implementation |
 |---|---|
 | Signer checks | Every mutating instruction requires `trader` or `authority` as signer |
-| PDA validation | PDA seeds and bumps enforced; collateral vault may be system-owned but must be at the expected PDA |
+| PDA validation | PDA seeds and bumps enforced; collateral vault is a zero-data program-owned PDA |
 | Oracle staleness | Reject Pyth prices older than 60 seconds |
 | Oracle confidence | Reject if confidence interval > 1% of price |
 | Oracle sign | Reject zero or negative oracle prices |
@@ -1347,8 +1348,9 @@ Fee pool accumulates in `VammState.fee_pool` (tracked in lamports). Admin can wi
 
 All PDA addresses are derived with this program ID. `VammState`, `Position`, and
 `InsuranceFund` are program-owned data accounts. `CollateralVault` is a zero-data
-system account at a PDA address; transfers out of it must use PDA signer seeds.
-Bump seeds are stored in each program-owned account and derived consistently in the client.
+program-owned PDA; deposits use `system_program::transfer`, and outbound payments are
+program-owned lamport debits. Bump seeds are stored in each program-owned data account and
+derived consistently in the client.
 
 ---
 
@@ -1610,9 +1612,9 @@ vortex-perp/
 | No partial close | Allow closing a fraction of position size |
 | Funding receivers capped by funding_pool | Track unpaid funding credits or settle funding globally with indexed positions |
 | Pyth pull oracle adds tx size | Optimize by batching price updates across instructions |
-| Anchor pinned to 0.32.1 | Upgrade to Anchor 1.x only after Pyth receiver SDK compatibility is verified |
+| Anchor pinned to 0.31.1 | Upgrade only after Pyth receiver SDK compatibility is verified |
 
 ---
 
 *Generated for Solana Fellowship Capstone — VortexPerp: vAMM Perpetual Futures Engine*
-*Target: Solana devnet · Anchor 0.32.1 · Pyth pull oracle (devnet)*
+*Target: Solana devnet · Anchor 0.31.1 · Pyth pull oracle (devnet)*
