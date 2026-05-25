@@ -1,5 +1,5 @@
 import { HermesClient } from "@pythnetwork/hermes-client";
-import { PythSolanaReceiver } from "@pythnetwork/pyth-solana-receiver";
+import { PythSolanaReceiver, type PythTransactionBuilder } from "@pythnetwork/pyth-solana-receiver";
 import {
   ComputeBudgetProgram,
   type Connection,
@@ -15,6 +15,11 @@ export interface PostedPriceUpdate {
   postInstructions: TransactionInstruction[];
   closeInstructions: TransactionInstruction[];
   signers: Signer[];
+  priceUpdateAccount: PublicKey;
+}
+
+export interface PreparedPriceUpdateBuilder {
+  transactionBuilder: PythTransactionBuilder;
   priceUpdateAccount: PublicKey;
 }
 
@@ -40,6 +45,26 @@ export async function getPriceUpdateInstructions(
     closeInstructions,
     signers: collectEphemeralSigners(built.postInstructions, built.closeInstructions),
     priceUpdateAccount,
+  };
+}
+
+export async function preparePriceUpdateTransactionBuilder(
+  connection: Connection,
+  wallet: BrowserAnchorWallet,
+  feedIds = [SOL_USD_FEED_ID],
+): Promise<PreparedPriceUpdateBuilder> {
+  const hermes = new HermesClient("https://hermes.pyth.network");
+  const priceUpdates = await hermes.getLatestPriceUpdates(feedIds, { encoding: "base64" });
+  const receiver = new PythSolanaReceiver({ connection, wallet: wallet as any });
+  const transactionBuilder = receiver.newTransactionBuilder({
+    closeUpdateAccounts: true,
+  });
+
+  await transactionBuilder.addPostPartiallyVerifiedPriceUpdates(priceUpdates.binary.data);
+
+  return {
+    transactionBuilder,
+    priceUpdateAccount: transactionBuilder.getPriceUpdateAccount(normalizeFeedId(feedIds[0])),
   };
 }
 

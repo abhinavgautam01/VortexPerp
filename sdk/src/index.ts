@@ -1,10 +1,16 @@
 import type { Program } from "@coral-xyz/anchor";
 import { BN } from "@coral-xyz/anchor";
-import type { Connection, TransactionSignature } from "@solana/web3.js";
+import type {
+  Connection,
+  Signer,
+  TransactionInstruction,
+  TransactionSignature,
+  VersionedTransaction,
+} from "@solana/web3.js";
 import { PublicKey, SystemProgram } from "@solana/web3.js";
 
 import { LAMPORTS_PER_SOL, PROGRAM_ID, SCALE, SOL_USD_FEED_ID } from "./constants.js";
-import { getPriceUpdateInstructions } from "./pyth.js";
+import { preparePriceUpdateTransactionBuilder } from "./pyth.js";
 import {
   getCollateralVaultPda,
   getInsuranceFundPda,
@@ -16,6 +22,11 @@ export interface BrowserAnchorWallet {
   publicKey: PublicKey;
   signTransaction: (...args: any[]) => Promise<any>;
   signAllTransactions: (...args: any[]) => Promise<any[]>;
+}
+
+interface VersionedTransactionWithSigners {
+  tx: VersionedTransaction;
+  signers: Signer[];
 }
 
 export class PerpSDK {
@@ -72,76 +83,70 @@ export class PerpSDK {
     leverage: number,
   ): Promise<TransactionSignature> {
     const marginLamports = BigInt(Math.round(marginSol * Number(LAMPORTS_PER_SOL)));
-    const priceUpdate = await getPriceUpdateInstructions(this.connection, this.wallet);
     const [vammState] = this.getVammStatePDA();
     const [position] = this.getPositionPDA(this.wallet.publicKey);
     const [collateralVault] = this.getCollateralVaultPDA();
 
-    return this.program.methods
-      .openPosition(
-        direction === "long" ? { long: {} } : { short: {} },
-        new BN(marginLamports.toString()),
-        leverage,
-      )
-      .preInstructions(priceUpdate.postInstructions)
-      .postInstructions(priceUpdate.closeInstructions)
-      .signers(priceUpdate.signers)
-      .accounts({
-        trader: this.wallet.publicKey,
-        vammState,
-        position,
-        collateralVault,
-        priceUpdate: priceUpdate.priceUpdateAccount,
-        systemProgram: SystemProgram.programId,
-      })
-      .rpc();
+    return this.sendOracleBackedTransaction(async (priceUpdateAccount) =>
+      this.program.methods
+        .openPosition(
+          direction === "long" ? { long: {} } : { short: {} },
+          new BN(marginLamports.toString()),
+          leverage,
+        )
+        .accounts({
+          trader: this.wallet.publicKey,
+          vammState,
+          position,
+          collateralVault,
+          priceUpdate: priceUpdateAccount,
+          systemProgram: SystemProgram.programId,
+        })
+        .instruction(),
+    );
   }
 
   async closePosition(): Promise<TransactionSignature> {
-    const priceUpdate = await getPriceUpdateInstructions(this.connection, this.wallet);
     const [vammState] = this.getVammStatePDA();
     const [position] = this.getPositionPDA(this.wallet.publicKey);
     const [collateralVault] = this.getCollateralVaultPDA();
     const [insuranceFund] = this.getInsuranceFundPDA();
 
-    return this.program.methods
-      .closePosition()
-      .preInstructions(priceUpdate.postInstructions)
-      .postInstructions(priceUpdate.closeInstructions)
-      .signers(priceUpdate.signers)
-      .accounts({
-        trader: this.wallet.publicKey,
-        vammState,
-        position,
-        collateralVault,
-        insuranceFund,
-        priceUpdate: priceUpdate.priceUpdateAccount,
-        systemProgram: SystemProgram.programId,
-      })
-      .rpc();
+    return this.sendOracleBackedTransaction(async (priceUpdateAccount) =>
+      this.program.methods
+        .closePosition()
+        .accounts({
+          trader: this.wallet.publicKey,
+          vammState,
+          position,
+          collateralVault,
+          insuranceFund,
+          priceUpdate: priceUpdateAccount,
+          systemProgram: SystemProgram.programId,
+        })
+        .instruction(),
+    );
   }
 
   async addMargin(solAmount: number): Promise<TransactionSignature> {
     const lamports = BigInt(Math.round(solAmount * Number(LAMPORTS_PER_SOL)));
-    const priceUpdate = await getPriceUpdateInstructions(this.connection, this.wallet);
     const [vammState] = this.getVammStatePDA();
     const [position] = this.getPositionPDA(this.wallet.publicKey);
     const [collateralVault] = this.getCollateralVaultPDA();
 
-    return this.program.methods
-      .addMargin(new BN(lamports.toString()))
-      .preInstructions(priceUpdate.postInstructions)
-      .postInstructions(priceUpdate.closeInstructions)
-      .signers(priceUpdate.signers)
-      .accounts({
-        trader: this.wallet.publicKey,
-        vammState,
-        position,
-        collateralVault,
-        priceUpdate: priceUpdate.priceUpdateAccount,
-        systemProgram: SystemProgram.programId,
-      })
-      .rpc();
+    return this.sendOracleBackedTransaction(async (priceUpdateAccount) =>
+      this.program.methods
+        .addMargin(new BN(lamports.toString()))
+        .accounts({
+          trader: this.wallet.publicKey,
+          vammState,
+          position,
+          collateralVault,
+          priceUpdate: priceUpdateAccount,
+          systemProgram: SystemProgram.programId,
+        })
+        .instruction(),
+    );
   }
 
   getVammStatePDA(): [PublicKey, number] {
@@ -158,6 +163,42 @@ export class PerpSDK {
 
   getInsuranceFundPDA(): [PublicKey, number] {
     return getInsuranceFundPda(this.programId);
+  }
+
+  private async sendOracleBackedTransaction(
+    buildConsumerInstruction: (priceUpdateAccount: PublicKey) => Promise<TransactionInstruction>,
+  ): Promise<TransactionSignature> {
+    const { transactionBuilder, priceUpdateAccount } = await preparePriceUpdateTransactionBuilder(
+      this.connection,
+      this.wallet,
+    );
+    transactionBuilder.addInstructions([
+      {
+        instruction: await buildConsumerInstruction(priceUpdateAccount),
+        signers: [],
+        computeUnits: 150_000,
+      },
+    ]);
+
+    const transactions = (await transactionBuilder.buildVersionedTransactions({
+      computeUnitPriceMicroLamports: 50_000,
+      tightComputeBudget: true,
+    })) as VersionedTransactionWithSigners[];
+
+    for (const { tx, signers } of transactions) {
+      tx.sign(signers);
+    }
+
+    const signedTransactions = await this.wallet.signAllTransactions(transactions.map(({ tx }) => tx));
+    let signature = "";
+    for (const signed of signedTransactions) {
+      signature = await this.connection.sendRawTransaction(signed.serialize(), {
+        preflightCommitment: "confirmed",
+      });
+      await this.connection.confirmTransaction(signature, "confirmed");
+    }
+
+    return signature;
   }
 }
 

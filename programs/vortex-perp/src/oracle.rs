@@ -1,12 +1,17 @@
 use anchor_lang::prelude::*;
-use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
+use pyth_solana_receiver_sdk::price_update::{PriceUpdateV2, VerificationLevel};
 
 use crate::constants::{MAX_ORACLE_AGE_SECS, MAX_ORACLE_CONFIDENCE_BPS};
 use crate::errors::PerpError;
 
 pub fn read_pyth_price(price_update: &Account<PriceUpdateV2>, feed_id: &[u8; 32]) -> Result<u128> {
     let price = price_update
-        .get_price_no_older_than(&Clock::get()?, MAX_ORACLE_AGE_SECS, feed_id)
+        .get_price_no_older_than_with_custom_verification_level(
+            &Clock::get()?,
+            MAX_ORACLE_AGE_SECS,
+            feed_id,
+            VerificationLevel::Partial { num_signatures: 5 },
+        )
         .map_err(|_| PerpError::StalePythPrice)?;
 
     require!(price.price > 0, PerpError::InvalidOraclePrice);
