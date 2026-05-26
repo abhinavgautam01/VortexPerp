@@ -6,7 +6,6 @@ import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { PublicKey } from "@solana/web3.js";
 import {
-  Activity,
   CheckCircle2,
   Code2,
   Database,
@@ -101,6 +100,8 @@ export default function Page() {
   const { connection } = useConnection();
   const wallet = useWallet();
   const [mounted, setMounted] = useState(false);
+  const [showSplash, setShowSplash] = useState(true);
+  const [splashFade, setSplashFade] = useState(false);
   const [direction, setDirection] = useState<"long" | "short">("long");
   const [margin, setMargin] = useState("0.10");
   const [addMargin, setAddMargin] = useState("0.05");
@@ -117,6 +118,31 @@ export default function Page() {
 
   useEffect(() => {
     setMounted(true);
+    
+    // Lock scrollbar on body during splash transition
+    if (typeof document !== "undefined") {
+      document.body.classList.add("splash-active");
+    }
+
+    const fadeTimer = setTimeout(() => {
+      setSplashFade(true);
+    }, 2000);
+
+    const unmountTimer = setTimeout(() => {
+      setShowSplash(false);
+      // Restore standard scrollbar after splash unmounts
+      if (typeof document !== "undefined") {
+        document.body.classList.remove("splash-active");
+      }
+    }, 2500);
+
+    return () => {
+      clearTimeout(fadeTimer);
+      clearTimeout(unmountTimer);
+      if (typeof document !== "undefined") {
+        document.body.classList.remove("splash-active");
+      }
+    };
   }, []);
 
   const anchorWallet = useMemo<BrowserAnchorWallet | null>(() => {
@@ -235,17 +261,94 @@ export default function Page() {
   };
 
   const isWalletReady = Boolean(sdk && wallet.publicKey);
+  const existingDirection = position?.direction.toLowerCase();
+  const tradeLabel = !position
+    ? `Open ${direction === "long" ? "Long" : "Short"}`
+    : existingDirection === direction
+      ? `Increase ${direction === "long" ? "Long" : "Short"}`
+      : `Reduce / Flip ${direction === "long" ? "Long" : "Short"}`;
   const canInitialize = isWalletReady && programDeployed === true && !market && !busyAction;
-  const canOpen = isWalletReady && programDeployed === true && Boolean(market) && !position && preview.ready && !busyAction;
+  const canOpen = isWalletReady && programDeployed === true && Boolean(market) && preview.ready && !busyAction;
   const canClose = isWalletReady && programDeployed === true && Boolean(position) && !busyAction;
   const canAddMargin = canClose && Number(addMargin) > 0;
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell direction-${direction}`}>
+      {showSplash && (
+        <div className={`splash-screen ${splashFade ? "fade-out" : ""}`}>
+          <div className="splash-content">
+            <svg
+              className="splash-logo"
+              viewBox="0 0 24 24"
+              width="72"
+              height="72"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M4 5L12 19L20 5"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M7 8L12 16.5L17 8"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity="0.7"
+              />
+              <path
+                d="M10 11L12 14L14 11"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity="0.4"
+              />
+            </svg>
+            <h1 className="splash-title">VortexPerp</h1>
+            <p className="splash-subtitle">SOL Isolated Perpetuals</p>
+          </div>
+        </div>
+      )}
       <header className="app-header">
         <div className="brand">
           <span className="brand-icon">
-            <Activity size={20} />
+            <svg
+              className="vortex-logo-svg"
+              viewBox="0 0 24 24"
+              width="24"
+              height="24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M4 5L12 19L20 5"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M7 8L12 16.5L17 8"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity="0.7"
+              />
+              <path
+                d="M10 11L12 14L14 11"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                opacity="0.4"
+              />
+            </svg>
           </span>
           <div>
             <strong>VortexPerp</strong>
@@ -304,7 +407,7 @@ export default function Page() {
           <div className="section-heading">
             <div>
               <span className="eyebrow">Trading</span>
-              <h2>Open position</h2>
+              <h2>Trade position</h2>
             </div>
             <span className="mode-chip">Wallet transaction</span>
           </div>
@@ -365,9 +468,9 @@ export default function Page() {
             <button
               className={`primary-action ${direction}`}
               disabled={!canOpen}
-              onClick={() => runTransaction("Open position", () => sdk!.openPosition(direction, Number(margin), leverage))}
+              onClick={() => runTransaction(tradeLabel, () => sdk!.openPosition(direction, Number(margin), leverage))}
             >
-              Open {direction === "long" ? "Long" : "Short"}
+              {tradeLabel}
             </button>
           </div>
 
