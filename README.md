@@ -8,6 +8,28 @@ VortexPerp is a decentralized, virtual Automated Market Maker (vAMM) perpetual f
 
 ## Architecture Overview
 
+```text
+      ┌───────────── Frontend (Next.js) ─────────────┐
+      │ Wallet Connect · Margin x Leverage Form      │
+      │ Live Pyth Charts · Positions Dashboard       │
+      └──────────────────────────────────────────────┘
+            │                               │
+            │ RPC Instructions              │ RPC Queries
+            │ (Open/Close Positions)        │ (Market State)
+            ▼                               ▼
+      ┌────────────────── Solana Devnet ─────────────────┐
+      │ VortexPerp Anchor Smart Contract                 │
+      │                                                  │
+      │  vAMM Engine (x*y=k) · Collateral Vaults         │
+      │  Position PDAs       · Margin Validations        │
+      └──────────────────────────────────────────────────┘
+                 ▲                          ▲
+                 │                          │
+           Push Oracle                 Liquidators
+          (Pyth Network)            (Third-Party Bots)
+      Sub-second Price Feeds      Margin Health Checks
+```
+
 The protocol is composed of three primary layers:
 
 1. **Smart Contracts (Solana Program)**
