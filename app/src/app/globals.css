@@ -1719,8 +1719,8 @@ body.splash-active {
   background-size: 200% 100%;
   background-clip: text;
   -webkit-background-clip: text;
-  animation: shine-beam 2.5s infinite;
-  animation-delay: 2.5s;
+  animation: shine-beam 5s infinite;
+  animation-delay: 3s;
   z-index: 2;
 }
 
@@ -1728,7 +1728,71 @@ body.splash-active {
   0% {
     background-position: 200% center;
   }
-  30%, 100% {
+  40%, 100% {
     background-position: -100% center;
   }
+}
+
+/* Solana Wallet Adapter Modal Overrides */
+.wallet-adapter-modal-wrapper {
+  background: #0b0d10 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(0, 210, 255, 0.1) !important;
+  font-family: 'Outfit', sans-serif !important;
+  padding: 32px 24px !important;
+}
+
+.wallet-adapter-modal-title {
+  color: var(--text) !important;
+  font-weight: 700 !important;
+  font-size: 22px !important;
+  letter-spacing: -0.02em !important;
+  margin-bottom: 24px !important;
+}
+
+.wallet-adapter-modal-list {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.wallet-adapter-modal-list .wallet-adapter-button {
+  border-radius: 12px !important;
+  border: 1px solid rgba(255, 255, 255, 0.04) !important;
+  transition: all 0.2s ease !important;
+  background: rgba(255, 255, 255, 0.02) !important;
+  margin-bottom: 8px !important;
+  padding: 16px 20px !important;
+  height: auto !important;
+}
+
+.wallet-adapter-modal-list .wallet-adapter-button:hover {
+  background: rgba(0, 210, 255, 0.06) !important;
+  border: 1px solid rgba(0, 210, 255, 0.3) !important;
+  transform: translateY(-1px);
+}
+
+.wallet-adapter-modal-list .wallet-adapter-button span {
+  font-weight: 600 !important;
+  font-size: 16px !important;
+  color: var(--text) !important;
+}
+
+.wallet-adapter-modal-button-close {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border-radius: 50% !important;
+  transition: all 0.2s ease !important;
+  padding: 8px !important;
+  top: 16px !important;
+  right: 16px !important;
+}
+
+.wallet-adapter-modal-button-close:hover {
+  background: rgba(255, 75, 75, 0.2) !important;
+  color: #ff4b4b !important;
+}
+
+.wallet-adapter-modal-overlay {
+  background: rgba(0, 0, 0, 0.7) !important;
+  backdrop-filter: blur(8px) !important;
 }
