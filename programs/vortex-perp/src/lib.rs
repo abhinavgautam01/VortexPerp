@@ -21,6 +21,9 @@ declare_id!("72RTphkGMwRaxtmkBnyQ32NKox394craNKJcVABdKNo7");
 pub mod vortex_perp {
     use super::*;
 
+    // TODO: Real Funding Rates: Implementing the mathematical crank to actually charge users funding rates every hour to keep the Mark Price pegged to the Index Price.
+    // TODO: Multiple Markets: Expanding from just SOL-PERP to BTC-PERP and ETH-PERP.
+
     pub fn initialize(
         ctx: Context<Initialize>,
         base_asset_reserve: u128,

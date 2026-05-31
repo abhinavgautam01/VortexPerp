@@ -77,6 +77,27 @@ export class PerpSDK {
       .rpc();
   }
 
+  async updateVamm(
+    newBaseReserve: bigint,
+    newQuoteReserve: bigint,
+  ): Promise<TransactionSignature> {
+    const [vammState] = this.getVammStatePDA();
+    
+    return this.sendOracleBackedTransaction(async (priceUpdateAccount) =>
+      this.program.methods
+        .updateVamm(
+          new BN(newBaseReserve.toString()),
+          new BN(newQuoteReserve.toString())
+        )
+        .accounts({
+          authority: this.wallet.publicKey,
+          vammState,
+          priceUpdate: priceUpdateAccount,
+        })
+        .instruction()
+    );
+  }
+
   async openPosition(
     direction: "long" | "short",
     marginSol: number,

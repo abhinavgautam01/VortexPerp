@@ -12,10 +12,18 @@ import {
   ExternalLink,
   RefreshCw,
   Shield,
+  TrendingDown,
+  TrendingUp,
   Wallet as WalletIcon,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 
+import TradingViewChart from "./TradingViewChart";
+import { useLivePrice } from "../hooks/use-live-price";
 import idl from "../../../target/idl/vortex_perp.json";
 import {
   LAMPORTS_PER_SOL,
@@ -72,6 +80,8 @@ type MarketSummary = {
   totalMarginSol: string;
   feePoolSol: string;
   paused: boolean;
+  baseAssetReserve: bigint;
+  quoteAssetReserve: bigint;
 };
 
 type PositionSummary = {
@@ -115,6 +125,7 @@ export default function Page() {
     status: "idle",
     message: "Connect a wallet, deploy the program, then initialize the market.",
   });
+  const livePrice = useLivePrice();
 
   useEffect(() => {
     setMounted(true);
@@ -166,10 +177,25 @@ export default function Page() {
   }, [anchorWallet, connection]);
 
   const preview = useMemo(() => {
+    const activeVammState = market ? {
+      baseAssetReserve: market.baseAssetReserve,
+      quoteAssetReserve: market.quoteAssetReserve,
+      k: market.baseAssetReserve * market.quoteAssetReserve,
+    } : {
+      baseAssetReserve: 1_000_000n * SCALE,
+      quoteAssetReserve: livePrice?.priceNum && livePrice.priceNum > 0
+        ? BigInt(Math.floor(livePrice.priceNum * 1_000_000)) * SCALE
+        : 20_000_000n * SCALE,
+      k: 0n,
+    };
+    if (!market) {
+      activeVammState.k = activeVammState.baseAssetReserve * activeVammState.quoteAssetReserve;
+    }
+
     const marginSol = Number(margin || "0");
     const safeMarginSol = Number.isFinite(marginSol) && marginSol > 0 ? marginSol : 0;
     const marginLamports = BigInt(Math.round(safeMarginSol * Number(LAMPORTS_PER_SOL)));
-    const indexPrice = markPrice(vammState);
+    const indexPrice = markPrice(activeVammState);
     const notional = notionalUsdFromLamports(marginLamports, BigInt(leverage), indexPrice);
     const fee = tradingFeeLamports(marginLamports, BigInt(leverage));
 
@@ -188,8 +214,8 @@ export default function Page() {
 
     const opened =
       direction === "long"
-        ? openLong(vammState, notional, marginLamports, indexPrice)
-        : openShort(vammState, notional, marginLamports, indexPrice);
+        ? openLong(activeVammState, notional, marginLamports, indexPrice)
+        : openShort(activeVammState, notional, marginLamports, indexPrice);
 
     return {
       ready: true,
@@ -201,7 +227,7 @@ export default function Page() {
       entry: formatScaled(opened.entryPrice, 2),
       liquidation: formatScaled(opened.liquidationPrice, 2),
     };
-  }, [direction, margin, leverage]);
+  }, [direction, margin, leverage, market, livePrice?.priceNum]);
 
   const refreshState = useCallback(async () => {
     setIsRefreshing(true);
@@ -234,14 +260,38 @@ export default function Page() {
     void refreshState();
   }, [mounted, refreshState]);
 
+  useEffect(() => {
+    if (actionState.status === "idle") {
+      let newMessage = "Connect a wallet to begin.";
+      if (wallet.publicKey) {
+        if (programDeployed === false) {
+          newMessage = "Deploy the program before proceeding.";
+        } else if (programDeployed === true && !market) {
+          newMessage = "Initialize the market to start trading.";
+        } else if (programDeployed === true && market) {
+          newMessage = "System ready. Open a Long or Short position.";
+        }
+      }
+      
+      if (actionState.message !== newMessage) {
+        setActionState(prev => ({ ...prev, message: newMessage }));
+      }
+    }
+  }, [actionState.status, actionState.message, wallet.publicKey, programDeployed, market]);
+
   const runTransaction = async (label: string, execute: () => Promise<string>) => {
     if (!sdk || !wallet.publicKey) {
+      toast.error("Connect a wallet first.");
       setActionState({ status: "error", message: "Connect a wallet first." });
       return;
     }
 
     setBusyAction(label);
     setActionState({ status: "pending", message: `${label} transaction is waiting for wallet approval.` });
+    
+    // Optional: show a loading toast if you want, but success/error is usually enough
+    const toastId = toast.loading(`${label}...`);
+    
     try {
       const signature = await execute();
       setActionState({
@@ -249,12 +299,14 @@ export default function Page() {
         message: `${label} confirmed.`,
         signature,
       });
+      toast.success(`${label} confirmed!`, { id: toastId });
       await refreshState();
     } catch (error) {
       setActionState({
         status: "error",
         message: toErrorMessage(error),
       });
+      toast.error(toErrorMessage(error), { id: toastId });
     } finally {
       setBusyAction(null);
     }
@@ -262,18 +314,30 @@ export default function Page() {
 
   const isWalletReady = Boolean(sdk && wallet.publicKey);
   const existingDirection = position?.direction.toLowerCase();
-  const tradeLabel = !position
-    ? `Open ${direction === "long" ? "Long" : "Short"}`
-    : existingDirection === direction
+  
+  let tradeLabel = "";
+  if (!isWalletReady) {
+    tradeLabel = "Connect Wallet";
+  } else if (programDeployed === false) {
+    tradeLabel = "Program Not Deployed";
+  } else if (!market) {
+    tradeLabel = "Market Not Initialized";
+  } else if (!position) {
+    tradeLabel = `Open ${direction === "long" ? "Long" : "Short"}`;
+  } else {
+    tradeLabel = existingDirection === direction
       ? `Increase ${direction === "long" ? "Long" : "Short"}`
       : `Reduce / Flip ${direction === "long" ? "Long" : "Short"}`;
+  }
+
   const canInitialize = isWalletReady && programDeployed === true && !market && !busyAction;
   const canOpen = isWalletReady && programDeployed === true && Boolean(market) && preview.ready && !busyAction;
   const canClose = isWalletReady && programDeployed === true && Boolean(position) && !busyAction;
   const canAddMargin = canClose && Number(addMargin) > 0;
 
   return (
-    <main className={`app-shell direction-${direction}`}>
+    <>
+      <main className={`app-shell direction-${direction}`}>
       {showSplash && (
         <div className={`splash-screen ${splashFade ? "fade-out" : ""}`}>
           <div className="splash-content">
@@ -315,7 +379,7 @@ export default function Page() {
         </div>
       )}
       <header className="app-header">
-        <div className="brand">
+        <div className="brand" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <span className="brand-icon">
             <svg
               className="vortex-logo-svg"
@@ -352,14 +416,107 @@ export default function Page() {
           </span>
           <div>
             <strong>VortexPerp</strong>
-            <span>SOL isolated perpetuals on Anchor</span>
+            <span>SOL isolated perpetuals</span>
           </div>
         </div>
-        <div className="wallet-area">
-          <WalletIcon size={16} />
-          {mounted ? <WalletMultiButton /> : <button className="wallet-placeholder">Select Wallet</button>}
+        
+        <div className="wallet-area" style={{ display: "flex", alignItems: "center", gap: "24px" }}>
+          <nav className="header-nav" style={{ display: "flex", alignItems: "center", gap: "20px" }}>
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "4px 10px",
+              background: "rgba(0, 210, 255, 0.08)",
+              border: "1px solid rgba(0, 210, 255, 0.2)",
+              borderRadius: "6px",
+              color: "var(--blue)",
+              fontSize: "12px",
+              fontWeight: 700,
+              letterSpacing: "0.04em",
+              textTransform: "uppercase"
+            }}>
+              <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--blue)", boxShadow: "0 0 8px var(--blue)" }} />
+              Devnet
+            </div>
+            
+            <a 
+              href="https://faucet.solana.com/" 
+              target="_blank" 
+              rel="noreferrer"
+              className="nav-link" 
+              style={{
+                color: "var(--muted)", 
+                textDecoration: "none", 
+                fontWeight: 600, 
+                fontSize: "14px",
+                transition: "color 0.2s"
+              }}
+              onMouseOver={e => e.currentTarget.style.color = "var(--text)"}
+              onMouseOut={e => e.currentTarget.style.color = "var(--muted)"}
+            >
+              Airdrop
+            </a>
+
+            <Link 
+              href="/docs" 
+              className="nav-link" 
+              style={{
+                color: "var(--text)", 
+                textDecoration: "none", 
+                fontWeight: 600, 
+                fontSize: "14px",
+                transition: "color 0.2s"
+              }}
+              onMouseOver={e => e.currentTarget.style.color = "var(--green)"}
+              onMouseOut={e => e.currentTarget.style.color = "var(--text)"}
+            >
+              Documentation
+            </Link>
+          </nav>
+          
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", borderLeft: "1px solid var(--line)", paddingLeft: "24px" }}>
+            <WalletIcon size={16} />
+            {mounted ? <WalletMultiButton /> : <button className="wallet-placeholder">Select Wallet</button>}
+          </div>
         </div>
       </header>
+
+      <div className="live-ticker-strip">
+        <div className="ticker-price-group">
+          <span className="ticker-label">SOL / USD</span>
+          <span className={`ticker-price ${livePrice.tickDirection}`}>
+            ${livePrice.price}
+          </span>
+          {livePrice.tickDirection === "up" && <TrendingUp size={14} className="ticker-arrow up" />}
+          {livePrice.tickDirection === "down" && <TrendingDown size={14} className="ticker-arrow down" />}
+        </div>
+        <div className="ticker-stats">
+          <span className={`ticker-change ${livePrice.change24h >= 0 ? "positive" : "negative"}`}>
+            {livePrice.change24h >= 0 ? "+" : ""}{livePrice.change24h.toFixed(2)}%
+          </span>
+          <span className="ticker-stat">
+            <em>Funding</em> +0.0031% / 1h
+          </span>
+          <span className="ticker-stat">
+            <em>H</em> ${livePrice.high24h}
+          </span>
+          <span className="ticker-stat">
+            <em>L</em> ${livePrice.low24h}
+          </span>
+          <span className="ticker-stat">
+            <em>Vol</em> {livePrice.volume24h}
+          </span>
+        </div>
+        <span className={`ticker-connection ${livePrice.connected ? "online" : "offline"}`} title={livePrice.connected ? "Live feed connected" : "Feed disconnected"}>
+          {livePrice.connected ? <Wifi size={12} /> : <WifiOff size={12} />}
+          {livePrice.connected ? "Live" : "Offline"}
+        </span>
+      </div>
+
+      <div style={{ marginBottom: "24px", borderRadius: "10px", overflow: "hidden", border: "1px solid var(--line)" }}>
+        <TradingViewChart />
+      </div>
 
       <section className="hero-panel">
         <div className="hero-copy">
@@ -458,13 +615,23 @@ export default function Page() {
           </div>
 
           <div className="action-grid">
-            <button
-              className="secondary-action"
-              disabled={!canInitialize}
-              onClick={() => runTransaction("Initialize market", () => sdk!.initializeMarket())}
-            >
-              Initialize Market
-            </button>
+            {!market && (
+              <button
+                className="secondary-action"
+                disabled={!sdk || !wallet.publicKey}
+                onClick={() => runTransaction("Initialize market", () => {
+                  if (!livePrice || livePrice.priceNum <= 0) {
+                    toast.error("Waiting for live price feed...");
+                    return Promise.reject(new Error("Waiting for live price"));
+                  }
+                  const baseReserve = 1_000_000n * SCALE;
+                  const quoteReserve = BigInt(Math.floor(livePrice.priceNum * 1_000_000)) * SCALE;
+                  return sdk!.initializeMarket(baseReserve, quoteReserve);
+                })}
+              >
+                Initialize Market
+              </button>
+            )}
             <button
               className={`primary-action ${direction}`}
               disabled={!canOpen}
@@ -566,24 +733,83 @@ export default function Page() {
         </aside>
       </section>
 
+      <section className="positions-panel">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Asset</th>
+              <th>Direction</th>
+              <th>Size</th>
+              <th>Notional</th>
+              <th>Margin</th>
+              <th>Entry Price</th>
+              <th>Liq. Price</th>
+              <th>Unrealized PnL</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {position ? (
+              <tr>
+                <td>SOL-PERP</td>
+                <td className={position.direction === "Long" ? "positive" : "negative"}>
+                  {position.direction}
+                </td>
+                <td>{position.size} SOL</td>
+                <td>${position.notional}</td>
+                <td>{position.marginSol} SOL</td>
+                <td>${position.entryPrice}</td>
+                <td>${position.liquidationPrice}</td>
+                {/* Simulated PnL for demo purposes */}
+                <td className={market && position.direction === "Long" && parseFloat(market.markPrice) > parseFloat(position.entryPrice) ? "positive" : "negative"}>
+                  {market ? (
+                    (() => {
+                      const diff = parseFloat(market.markPrice) - parseFloat(position.entryPrice);
+                      const pnl = position.direction === "Long" ? diff * parseFloat(position.size) : -diff * parseFloat(position.size);
+                      return pnl >= 0 ? `+$${pnl.toFixed(2)}` : `-$${Math.abs(pnl).toFixed(2)}`;
+                    })()
+                  ) : "-"}
+                </td>
+                <td>
+                  <button 
+                    className="close-btn"
+                    disabled={!canClose}
+                    onClick={() => runTransaction("Close position", () => sdk!.closePosition())}
+                  >
+                    Close
+                  </button>
+                </td>
+              </tr>
+            ) : (
+              <tr>
+                <td colSpan={9} style={{ textAlign: "center", padding: "48px", color: "var(--muted)" }}>
+                  No open positions found.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </section>
+
       <section className="repo-strip">
         <div>
           <strong>Implemented instructions</strong>
           <span>{implementedInstructions.join(", ")}.</span>
         </div>
-        <a href="https://explorer.solana.com/?cluster=devnet" rel="noreferrer" target="_blank">
+        <a href="https://solscan.io/account/72RTphkGMwRaxtmkBnyQ32NKox394craNKJcVABdKNo7?cluster=devnet#programIdl" rel="noreferrer" target="_blank">
           Devnet explorer <ExternalLink size={14} />
         </a>
       </section>
 
-      <section className="repo-strip">
-        <div>
-          <strong>Program accounts</strong>
-          <span>{programAccounts.join(", ")}.</span>
+
+      </main>
+
+      <footer className="brand-footer">
+        <div className="brand-footer-text" data-text="VORTEXPERP">
+          VORTEXPERP
         </div>
-        <Code2 size={18} />
-      </section>
-    </main>
+      </footer>
+    </>
   );
 }
 
@@ -615,6 +841,8 @@ function ActionStatus({ state }: { state: ActionState }) {
 
 function toMarketSummary(account: unknown): MarketSummary {
   const value = account as Record<string, unknown>;
+  const baseAssetReserve = toBigIntValue(readField(value, "baseAssetReserve", "base_asset_reserve"));
+  const quoteAssetReserve = toBigIntValue(readField(value, "quoteAssetReserve", "quote_asset_reserve"));
   return {
     authority: String(readField(value, "authority") ?? ""),
     markPrice: formatScaled(toBigIntValue(readField(value, "markPrice", "mark_price")), 2),
@@ -622,6 +850,8 @@ function toMarketSummary(account: unknown): MarketSummary {
     totalMarginSol: lamportsToSol(toBigIntValue(readField(value, "totalMargin", "total_margin"))),
     feePoolSol: lamportsToSol(toBigIntValue(readField(value, "feePool", "fee_pool"))),
     paused: Boolean(readField(value, "paused")),
+    baseAssetReserve,
+    quoteAssetReserve,
   };
 }
 
