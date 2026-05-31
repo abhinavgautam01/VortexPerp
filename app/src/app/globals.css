@@ -1770,12 +1770,17 @@ body.splash-active {
   background: rgba(0, 210, 255, 0.06) !important;
   border: 1px solid rgba(0, 210, 255, 0.3) !important;
   transform: translateY(-1px);
+  color: #ffffff !important;
 }
 
 .wallet-adapter-modal-list .wallet-adapter-button span {
   font-weight: 600 !important;
   font-size: 16px !important;
   color: var(--text) !important;
+}
+
+.wallet-adapter-modal-list .wallet-adapter-button:hover span {
+  color: #ffffff !important;
 }
 
 .wallet-adapter-modal-button-close {
