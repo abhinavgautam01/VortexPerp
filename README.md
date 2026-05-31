@@ -2,6 +2,8 @@
 
 ![VortexPerp Platform](assets/hero.png)
 
+**Live Demo:** [https://vortex-perp.vercel.app/](https://vortex-perp.vercel.app/)
+
 VortexPerp is a decentralized, virtual Automated Market Maker (vAMM) perpetual futures exchange deployed on the Solana Devnet. The protocol enables users to trade perpetual contracts with leverage in a fully decentralized and non-custodial environment.
 
 ## Architecture Overview
