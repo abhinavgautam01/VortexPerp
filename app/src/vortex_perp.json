@@ -1,0 +1,1611 @@
+{
+  "address": "72RTphkGMwRaxtmkBnyQ32NKox394craNKJcVABdKNo7",
+  "metadata": {
+    "name": "vortex_perp",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "VortexPerp vAMM perpetual futures engine"
+  },
+  "instructions": [
+    {
+      "name": "add_margin",
+      "discriminator": [
+        211,
+        238,
+        238,
+        90,
+        223,
+        228,
+        228,
+        76
+      ],
+      "accounts": [
+        {
+          "name": "trader",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vamm_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  109,
+                  109,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "trader"
+              }
+            ]
+          }
+        },
+        {
+          "name": "collateral_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  108,
+                  108,
+                  97,
+                  116,
+                  101,
+                  114,
+                  97,
+                  108,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "price_update"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "lamports",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "close_position",
+      "discriminator": [
+        123,
+        134,
+        81,
+        0,
+        49,
+        68,
+        98,
+        98
+      ],
+      "accounts": [
+        {
+          "name": "trader",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vamm_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  109,
+                  109,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "trader"
+              }
+            ]
+          }
+        },
+        {
+          "name": "collateral_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  108,
+                  108,
+                  97,
+                  116,
+                  101,
+                  114,
+                  97,
+                  108,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "insurance_fund",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  110,
+                  115,
+                  117,
+                  114,
+                  97,
+                  110,
+                  99,
+                  101,
+                  95,
+                  102,
+                  117,
+                  110,
+                  100
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "price_update"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initialize",
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vamm_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  109,
+                  109,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "collateral_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  108,
+                  108,
+                  97,
+                  116,
+                  101,
+                  114,
+                  97,
+                  108,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "insurance_fund",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  110,
+                  115,
+                  117,
+                  114,
+                  97,
+                  110,
+                  99,
+                  101,
+                  95,
+                  102,
+                  117,
+                  110,
+                  100
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "base_asset_reserve",
+          "type": "u128"
+        },
+        {
+          "name": "quote_asset_reserve",
+          "type": "u128"
+        },
+        {
+          "name": "pyth_feed_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "liquidate",
+      "discriminator": [
+        223,
+        179,
+        226,
+        125,
+        48,
+        46,
+        39,
+        74
+      ],
+      "accounts": [
+        {
+          "name": "liquidator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "trader",
+          "writable": true
+        },
+        {
+          "name": "vamm_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  109,
+                  109,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "trader"
+              }
+            ]
+          }
+        },
+        {
+          "name": "collateral_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  108,
+                  108,
+                  97,
+                  116,
+                  101,
+                  114,
+                  97,
+                  108,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "insurance_fund",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  110,
+                  115,
+                  117,
+                  114,
+                  97,
+                  110,
+                  99,
+                  101,
+                  95,
+                  102,
+                  117,
+                  110,
+                  100
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "price_update"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "trader",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "open_position",
+      "discriminator": [
+        135,
+        128,
+        47,
+        77,
+        15,
+        152,
+        240,
+        49
+      ],
+      "accounts": [
+        {
+          "name": "trader",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vamm_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  109,
+                  109,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "trader"
+              }
+            ]
+          }
+        },
+        {
+          "name": "collateral_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  108,
+                  108,
+                  97,
+                  116,
+                  101,
+                  114,
+                  97,
+                  108,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "price_update"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "direction",
+          "type": {
+            "defined": {
+              "name": "Direction"
+            }
+          }
+        },
+        {
+          "name": "margin_lamports",
+          "type": "u64"
+        },
+        {
+          "name": "leverage",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "settle_funding",
+      "discriminator": [
+        11,
+        251,
+        12,
+        161,
+        199,
+        228,
+        133,
+        87
+      ],
+      "accounts": [
+        {
+          "name": "crank",
+          "signer": true
+        },
+        {
+          "name": "vamm_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  109,
+                  109,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "price_update"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "toggle_pause",
+      "discriminator": [
+        238,
+        237,
+        206,
+        27,
+        255,
+        95,
+        123,
+        229
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "vamm_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  109,
+                  109,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "update_vamm",
+      "discriminator": [
+        212,
+        133,
+        110,
+        170,
+        251,
+        229,
+        139,
+        99
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "vamm_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  109,
+                  109,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "price_update"
+        }
+      ],
+      "args": [
+        {
+          "name": "new_base_reserve",
+          "type": "u128"
+        },
+        {
+          "name": "new_quote_reserve",
+          "type": "u128"
+        }
+      ]
+    },
+    {
+      "name": "withdraw_fees",
+      "discriminator": [
+        198,
+        212,
+        171,
+        109,
+        144,
+        215,
+        174,
+        89
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vamm_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  109,
+                  109,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "collateral_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  108,
+                  108,
+                  97,
+                  116,
+                  101,
+                  114,
+                  97,
+                  108,
+                  95,
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "lamports",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "InsuranceFund",
+      "discriminator": [
+        43,
+        134,
+        170,
+        87,
+        102,
+        16,
+        142,
+        147
+      ]
+    },
+    {
+      "name": "Position",
+      "discriminator": [
+        170,
+        188,
+        143,
+        228,
+        122,
+        64,
+        247,
+        208
+      ]
+    },
+    {
+      "name": "PriceUpdateV2",
+      "discriminator": [
+        34,
+        241,
+        35,
+        99,
+        157,
+        126,
+        244,
+        205
+      ]
+    },
+    {
+      "name": "VammState",
+      "discriminator": [
+        37,
+        121,
+        148,
+        199,
+        157,
+        11,
+        99,
+        159
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "FundingSettled",
+      "discriminator": [
+        250,
+        241,
+        161,
+        50,
+        159,
+        70,
+        172,
+        196
+      ]
+    },
+    {
+      "name": "PositionClosed",
+      "discriminator": [
+        157,
+        163,
+        227,
+        228,
+        13,
+        97,
+        138,
+        121
+      ]
+    },
+    {
+      "name": "PositionLiquidated",
+      "discriminator": [
+        40,
+        107,
+        90,
+        214,
+        96,
+        30,
+        61,
+        128
+      ]
+    },
+    {
+      "name": "PositionOpened",
+      "discriminator": [
+        237,
+        175,
+        243,
+        230,
+        147,
+        117,
+        101,
+        121
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "VammPaused",
+      "msg": "vAMM is currently paused"
+    },
+    {
+      "code": 6001,
+      "name": "InvalidLeverage",
+      "msg": "Leverage must be between 1 and max_leverage"
+    },
+    {
+      "code": 6002,
+      "name": "MarginTooSmall",
+      "msg": "Margin too small"
+    },
+    {
+      "code": 6003,
+      "name": "InsufficientBalanceForFee",
+      "msg": "Margin plus trading fee exceeds available balance"
+    },
+    {
+      "code": 6004,
+      "name": "PositionAlreadyOpen",
+      "msg": "Trader already has an open position"
+    },
+    {
+      "code": 6005,
+      "name": "NotLiquidatable",
+      "msg": "Position is not liquidatable"
+    },
+    {
+      "code": 6006,
+      "name": "SelfLiquidation",
+      "msg": "Cannot self-liquidate"
+    },
+    {
+      "code": 6007,
+      "name": "FundingTooSoon",
+      "msg": "Funding period not elapsed yet"
+    },
+    {
+      "code": 6008,
+      "name": "StalePythPrice",
+      "msg": "Pyth price is stale or invalid"
+    },
+    {
+      "code": 6009,
+      "name": "InvalidOraclePrice",
+      "msg": "Oracle price must be positive"
+    },
+    {
+      "code": 6010,
+      "name": "PythConfidenceTooWide",
+      "msg": "Pyth confidence too wide"
+    },
+    {
+      "code": 6011,
+      "name": "MathOverflow",
+      "msg": "Math overflow"
+    },
+    {
+      "code": 6012,
+      "name": "InsufficientInsuranceFund",
+      "msg": "Insufficient insurance fund balance"
+    },
+    {
+      "code": 6013,
+      "name": "InsufficientCollateralVault",
+      "msg": "Insufficient collateral vault balance"
+    },
+    {
+      "code": 6014,
+      "name": "InvalidOracle",
+      "msg": "Invalid oracle account"
+    },
+    {
+      "code": 6015,
+      "name": "InvalidFeedId",
+      "msg": "Invalid Pyth feed ID"
+    },
+    {
+      "code": 6016,
+      "name": "Unauthorized",
+      "msg": "Unauthorized"
+    },
+    {
+      "code": 6017,
+      "name": "InsufficientFeePool",
+      "msg": "Insufficient fee pool balance"
+    },
+    {
+      "code": 6018,
+      "name": "ReservePriceDeviation",
+      "msg": "New reserves deviate too far from oracle price"
+    },
+    {
+      "code": 6019,
+      "name": "InvalidAmount",
+      "msg": "Trade amount must be greater than zero"
+    },
+    {
+      "code": 6020,
+      "name": "ReserveExhaustion",
+      "msg": "Trade would exhaust vAMM reserves"
+    },
+    {
+      "code": 6021,
+      "name": "NegativeEquity",
+      "msg": "Position equity is zero or negative"
+    }
+  ],
+  "types": [
+    {
+      "name": "Direction",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Long"
+          },
+          {
+            "name": "Short"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FundingSettled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mark_price_twap",
+            "type": "u128"
+          },
+          {
+            "name": "index_price",
+            "type": "u128"
+          },
+          {
+            "name": "funding_rate",
+            "type": "i128"
+          },
+          {
+            "name": "cumulative_funding_rate",
+            "type": "i128"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "InsuranceFund",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "balance",
+            "type": "u64"
+          },
+          {
+            "name": "total_payouts",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Position",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "vamm",
+            "type": "pubkey"
+          },
+          {
+            "name": "size",
+            "type": "u128"
+          },
+          {
+            "name": "notional",
+            "type": "u128"
+          },
+          {
+            "name": "direction",
+            "type": {
+              "defined": {
+                "name": "Direction"
+              }
+            }
+          },
+          {
+            "name": "entry_price",
+            "type": "u128"
+          },
+          {
+            "name": "liquidation_price",
+            "type": "u128"
+          },
+          {
+            "name": "margin",
+            "type": "u64"
+          },
+          {
+            "name": "last_funding_ts",
+            "type": "i64"
+          },
+          {
+            "name": "last_cumulative_funding_rate",
+            "type": "i128"
+          },
+          {
+            "name": "leverage",
+            "type": "u8"
+          },
+          {
+            "name": "opened_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PositionClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "direction",
+            "type": {
+              "defined": {
+                "name": "Direction"
+              }
+            }
+          },
+          {
+            "name": "size",
+            "type": "u128"
+          },
+          {
+            "name": "entry_price",
+            "type": "u128"
+          },
+          {
+            "name": "exit_price",
+            "type": "u128"
+          },
+          {
+            "name": "pnl_lamports",
+            "type": "i128"
+          },
+          {
+            "name": "margin_returned",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PositionLiquidated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "liquidator",
+            "type": "pubkey"
+          },
+          {
+            "name": "direction",
+            "type": {
+              "defined": {
+                "name": "Direction"
+              }
+            }
+          },
+          {
+            "name": "size",
+            "type": "u128"
+          },
+          {
+            "name": "margin",
+            "type": "u64"
+          },
+          {
+            "name": "remaining_lamports",
+            "type": "i128"
+          },
+          {
+            "name": "liquidation_fee",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PositionOpened",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "trader",
+            "type": "pubkey"
+          },
+          {
+            "name": "direction",
+            "type": {
+              "defined": {
+                "name": "Direction"
+              }
+            }
+          },
+          {
+            "name": "size",
+            "type": "u128"
+          },
+          {
+            "name": "entry_price",
+            "type": "u128"
+          },
+          {
+            "name": "margin",
+            "type": "u64"
+          },
+          {
+            "name": "leverage",
+            "type": "u8"
+          },
+          {
+            "name": "liquidation_price",
+            "type": "u128"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PriceFeedMessage",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "feed_id",
+            "docs": [
+              "`FeedId` but avoid the type alias because of compatibility issues with Anchor's `idl-build` feature."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "price",
+            "type": "i64"
+          },
+          {
+            "name": "conf",
+            "type": "u64"
+          },
+          {
+            "name": "exponent",
+            "type": "i32"
+          },
+          {
+            "name": "publish_time",
+            "docs": [
+              "The timestamp of this price update in seconds"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "prev_publish_time",
+            "docs": [
+              "The timestamp of the previous price update. This field is intended to allow users to",
+              "identify the single unique price update for any moment in time:",
+              "for any time t, the unique update is the one such that prev_publish_time < t <= publish_time.",
+              "",
+              "Note that there may not be such an update while we are migrating to the new message-sending logic,",
+              "as some price updates on pythnet may not be sent to other chains (because the message-sending",
+              "logic may not have triggered). We can solve this problem by making the message-sending mandatory",
+              "(which we can do once publishers have migrated over).",
+              "",
+              "Additionally, this field may be equal to publish_time if the message is sent on a slot where",
+              "where the aggregation was unsuccesful. This problem will go away once all publishers have",
+              "migrated over to a recent version of pyth-agent."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "ema_price",
+            "type": "i64"
+          },
+          {
+            "name": "ema_conf",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PriceUpdateV2",
+      "docs": [
+        "A price update account. This account is used by the Pyth Receiver program to store a verified price update from a Pyth price feed.",
+        "It contains:",
+        "- `write_authority`: The write authority for this account. This authority can close this account to reclaim rent or update the account to contain a different price update.",
+        "- `verification_level`: The [`VerificationLevel`] of this price update. This represents how many Wormhole guardian signatures have been verified for this price update.",
+        "- `price_message`: The actual price update.",
+        "- `posted_slot`: The slot at which this price update was posted."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "write_authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "verification_level",
+            "type": {
+              "defined": {
+                "name": "VerificationLevel"
+              }
+            }
+          },
+          {
+            "name": "price_message",
+            "type": {
+              "defined": {
+                "name": "PriceFeedMessage"
+              }
+            }
+          },
+          {
+            "name": "posted_slot",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "VammState",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "base_asset_reserve",
+            "type": "u128"
+          },
+          {
+            "name": "quote_asset_reserve",
+            "type": "u128"
+          },
+          {
+            "name": "k",
+            "type": "u128"
+          },
+          {
+            "name": "mark_price",
+            "type": "u128"
+          },
+          {
+            "name": "mark_price_twap",
+            "type": "u128"
+          },
+          {
+            "name": "twap_samples",
+            "type": {
+              "array": [
+                "u128",
+                8
+              ]
+            }
+          },
+          {
+            "name": "twap_sample_index",
+            "type": "u8"
+          },
+          {
+            "name": "twap_sample_count",
+            "type": "u8"
+          },
+          {
+            "name": "last_funding_ts",
+            "type": "i64"
+          },
+          {
+            "name": "cumulative_funding_rate",
+            "type": "i128"
+          },
+          {
+            "name": "funding_rate_cap",
+            "type": "u128"
+          },
+          {
+            "name": "total_long_base",
+            "type": "u128"
+          },
+          {
+            "name": "total_short_base",
+            "type": "u128"
+          },
+          {
+            "name": "total_margin",
+            "type": "u64"
+          },
+          {
+            "name": "funding_pool",
+            "type": "u64"
+          },
+          {
+            "name": "fee_pool",
+            "type": "u64"
+          },
+          {
+            "name": "open_interest",
+            "type": "u128"
+          },
+          {
+            "name": "collateral_vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "insurance_fund",
+            "type": "pubkey"
+          },
+          {
+            "name": "pyth_feed_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "max_leverage",
+            "type": "u8"
+          },
+          {
+            "name": "maintenance_margin_bps",
+            "type": "u16"
+          },
+          {
+            "name": "trading_fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "paused",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "VerificationLevel",
+      "docs": [
+        "Pyth price updates are bridged to all blockchains via Wormhole.",
+        "Using the price updates on another chain requires verifying the signatures of the Wormhole guardians.",
+        "The usual process is to check the signatures for two thirds of the total number of guardians, but this can be cumbersome on Solana because of the transaction size limits,",
+        "so we also allow for partial verification.",
+        "",
+        "This enum represents how much a price update has been verified:",
+        "- If `Full`, we have verified the signatures for two thirds of the current guardians.",
+        "- If `Partial`, only `num_signatures` guardian signatures have been checked.",
+        "",
+        "# Warning",
+        "Using partially verified price updates is dangerous, as it lowers the threshold of guardians that need to collude to produce a malicious price update."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Partial",
+            "fields": [
+              {
+                "name": "num_signatures",
+                "type": "u8"
+              }
+            ]
+          },
+          {
+            "name": "Full"
+          }
+        ]
+      }
+    }
+  ]
+}

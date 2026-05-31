@@ -24,7 +24,7 @@ import { toast } from "sonner";
 
 import TradingViewChart from "./TradingViewChart";
 import { useLivePrice } from "../hooks/use-live-price";
-import idl from "../../../target/idl/vortex_perp.json";
+import idl from "../vortex_perp.json";
 import {
   LAMPORTS_PER_SOL,
   MAX_LEVERAGE,
