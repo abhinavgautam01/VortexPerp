@@ -3,7 +3,7 @@
 import type { Idl } from "@coral-xyz/anchor";
 import { AnchorProvider, Program } from "@coral-xyz/anchor";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import { WalletMultiButton, useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { PublicKey } from "@solana/web3.js";
 import {
   CheckCircle2,
@@ -126,6 +126,7 @@ export default function Page() {
     message: "Connect a wallet, deploy the program, then initialize the market.",
   });
   const livePrice = useLivePrice();
+  const { setVisible } = useWalletModal();
 
   useEffect(() => {
     setMounted(true);
@@ -634,8 +635,14 @@ export default function Page() {
             )}
             <button
               className={`primary-action ${direction}`}
-              disabled={!canOpen}
-              onClick={() => runTransaction(tradeLabel, () => sdk!.openPosition(direction, Number(margin), leverage))}
+              disabled={isWalletReady ? !canOpen : false}
+              onClick={() => {
+                if (!isWalletReady) {
+                  setVisible(true);
+                  return;
+                }
+                runTransaction(tradeLabel, () => sdk!.openPosition(direction, Number(margin), leverage));
+              }}
             >
               {tradeLabel}
             </button>
